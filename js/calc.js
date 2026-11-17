@@ -1,7 +1,7 @@
 // Rumus yang di Excel ada di kolom abu-abu. Semua fungsi murni: masukan data + tanggal hari ini.
 import {TAHAP, TOLERANSI} from './schema.js';
 import {normNama, kontakDari} from './klien-util.js';
-import {aturSdm, cariJabatan, kontrakDari, gajiSaatIni, gajiDari, totalGaji, peringatanPegawai, masaKerja, bawaanTimProyek, refSdm, STATUS, STATUS_PENDEK} from './sdm-util.js';
+import {aturSdm, cariJabatan, kontrakDari, dokumenDari, gajiSaatIni, gajiDari, totalGaji, peringatanPegawai, masaKerja, bawaanTimProyek, refSdm, STATUS, STATUS_PENDEK} from './sdm-util.js';
 
 export const n = (v) => (v == null || v === '' || isNaN(+v) ? 0 : +v);
 const jumlah = (rows, f) => rows.reduce((a, r) => a + n(typeof f === 'function' ? f(r) : r[f]), 0);
@@ -105,7 +105,7 @@ export function hitung(db, today = hariIni(), atur = {}) {
       jabatan_id: jab?.id ?? s.jabatan_id ?? null, jabatan_nama: jab?.nama || '', perlu_skk: !!jab?.skk || !!s.skk_no || !!s.no_skk,
       skk_no: s.skk_no ?? s.no_skk, status_pendek: STATUS_PENDEK[s.status] || s.status || '',
       tim_proyek: s.tim_proyek ?? bawaanTimProyek(jab?.id),
-      kontrak_list: kontrak, gaji_list: gajiDari(s), gaji_saat_ini: gaji, gaji_total: totalGaji(gaji),
+      kontrak_list: kontrak, dokumen_list: dokumenDari(s), gaji_list: gajiDari(s), gaji_saat_ini: gaji, gaji_total: totalGaji(gaji),
       kontrak_akhir: s.status === STATUS.pkwt || !s.status ? akhir?.berakhir || null : s.status === STATUS.magang ? s.magang_selesai || null : null,
       peringatan, jml_peringatan: peringatan.length,
       masa_kerja: masaKerja(s.tgl_masuk, keluar && s.tgl_keluar ? s.tgl_keluar : today),
@@ -184,6 +184,7 @@ export function temuan(d, fmtTanggal = (x) => x) {
     butir('Hutang', 'Kewajiban jatuh tempo dalam 14 hari', d.hutang_lain.filter((h) => h.alert && h.alert !== 'LEWAT'), (h) => h.uraian || h.kreditur),
     butir('SDM', 'Peringatan kontrak, SKK/STRA, atau magang', d.sdm.filter((s) => s.jml_peringatan), (s) => s.nama + ' (' + s.peringatan.map((p) => p.teks).join(', ') + ')'),
     butir('SDM', 'Kontrak PKWT terbaru belum ada file PDF', d.sdm.filter((s) => s.aktif === 'Aktif' && s.status === STATUS.pkwt && s.kontrak_list.length && !s.kontrak_list.at(-1).file), (s) => s.nama),
+    butir('SDM', 'Pegawai tetap belum ada dokumen kerja (perjanjian kerja / SK)', d.sdm.filter((s) => s.aktif === 'Aktif' && s.status === STATUS.tetap && !s.dokumen_list.some((x) => x.file)), (s) => s.nama),
     butir('SDM', 'Belum ada No. BPJS Ketenagakerjaan', d.sdm.filter((s) => s.aktif === 'Aktif' && s.status !== STATUS.magang && !s.bpjs_tk_no && s.bpjs_tk !== 'Ya'), (s) => s.nama),
     butir('Aset', 'Lisensi atau pajak aset habis atau berakhir dalam 60 hari', d.aset.filter((a) => a.alert), (a) => a.nama + ' (s.d. ' + fmtTanggal(a.lisensi_sd) + ')'),
     butir('Aset', 'Aset tidak dalam kondisi baik', d.aset.filter((a) => a.kondisi && a.kondisi !== 'Baik'), (a) => a.nama + ' (' + a.kondisi + ')'),

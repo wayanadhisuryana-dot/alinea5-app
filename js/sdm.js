@@ -5,8 +5,9 @@ import {store, idBaru} from './store.js';
 import {h, idn, rp, tgl, isi, pill, pesan, aman, dialog, formatUang, bacaUang, ukuranFile, buangTeksPalsu} from './ui.js';
 import {kotakCek, cekSemua, periksaIsian} from './cek.js';
 import {hariIni} from './calc.js';
+import {OPSI} from './schema.js';
 import {
-  STATUS, STATUS_KERJA, STATUS_PENDEK, ALASAN_KELUAR, BATAS_FILE, aturSdm, bawaanTimProyek, kontrakDari, gajiDari,
+  STATUS, STATUS_KERJA, STATUS_PENDEK, ALASAN_KELUAR, BATAS_FILE, aturSdm, bawaanTimProyek, kontrakDari, dokumenDari, gajiDari,
   cekBatasPkwt, jatahHabis, namaKontrak, tambahHari, nikSama, namaMiripPegawai,
 } from './sdm-util.js';
 
@@ -85,7 +86,7 @@ export function renderSdm(el) {
 }
 
 // ---------- detail pegawai ----------
-const TAB = [['profil', 'Profil'], ['kepegawaian', 'Kepegawaian'], ['kontrak', 'Riwayat kontrak'], ['gaji', 'Riwayat gaji'], ['proyek', 'Proyek']];
+const TAB = [['profil', 'Profil'], ['kepegawaian', 'Kepegawaian'], ['kontrak', 'Kontrak & dokumen'], ['gaji', 'Riwayat gaji'], ['proyek', 'Proyek']];
 
 export function renderDetailPegawai(el, id) {
   const s = S.d.sdm.find((x) => x.id === id);
@@ -126,16 +127,27 @@ export function renderDetailPegawai(el, id) {
         ['Catatan', s.catatan],
       ]),
     ],
-    kontrak: () => (s.kontrak_list.length ? [
-      s.status !== STATUS.pkwt && h('p', {class: 'kecil redup'}, 'Status kerja sekarang ' + s.status_pendek + '; riwayat kontrak di bawah tetap disimpan sebagai arsip.'),
-      h('div', {class: 'gulir'}, h('table', {class: 'tabel'},
-        h('thead', null, h('tr', null, ['Kontrak', 'Mulai', 'Berakhir', 'File kontrak', 'Catatan'].map((x) => h('th', null, x)))),
-        h('tbody', null, s.kontrak_list.slice().reverse().map((k, i) => h('tr', null,
-          h('td', null, namaKontrak(k.ke), i === 0 && h('span', {class: 'kecil redup blok'}, 'terbaru')),
-          h('td', {class: 'nw'}, tgl(k.mulai)), h('td', {class: 'nw'}, tgl(k.berakhir)),
-          h('td', null, k.file ? h('div', {class: 'baris-tombol'}, tombolPdf(k.file), keteranganFile(k.file)) : h('span', {class: 'redup'}, 'Belum ada file')),
-          h('td', null, isi(k.catatan)))))))]
-      : h('p', {class: 'redup'}, s.status === STATUS.pkwt ? 'Belum ada kontrak tercatat. Klik Ubah untuk mengisi kontrak awal.' : 'Tidak ada riwayat kontrak. Riwayat kontrak dipakai untuk status Kontrak (PKWT).')),
+    kontrak: () => {
+      const tabelKontrak = s.kontrak_list.length ? [
+        s.status !== STATUS.pkwt && h('p', {class: 'kecil redup'}, 'Status kerja sekarang ' + s.status_pendek + '; riwayat kontrak PKWT di bawah tetap disimpan sebagai arsip.'),
+        h('div', {class: 'gulir'}, h('table', {class: 'tabel'},
+          h('thead', null, h('tr', null, ['Kontrak', 'Mulai', 'Berakhir', 'File kontrak', 'Catatan'].map((x) => h('th', null, x)))),
+          h('tbody', null, s.kontrak_list.slice().reverse().map((k, i) => h('tr', null,
+            h('td', null, namaKontrak(k.ke), i === 0 && h('span', {class: 'kecil redup blok'}, 'terbaru')),
+            h('td', {class: 'nw'}, tgl(k.mulai)), h('td', {class: 'nw'}, tgl(k.berakhir)),
+            h('td', null, k.file ? h('div', {class: 'baris-tombol'}, tombolPdf(k.file), keteranganFile(k.file)) : h('span', {class: 'redup'}, 'Belum ada file')),
+            h('td', null, isi(k.catatan)))))))]
+        : s.status === STATUS.pkwt ? h('p', {class: 'redup'}, 'Belum ada kontrak tercatat. Klik Ubah data untuk mengisi kontrak awal.') : null;
+      const tabelDokumen = s.dokumen_list.length ? h('div', {class: 'gulir'}, h('table', {class: 'tabel'},
+        h('thead', null, h('tr', null, ['Dokumen', 'Nomor', 'Tanggal', 'File', 'Catatan'].map((x) => h('th', null, x)))),
+        h('tbody', null, s.dokumen_list.slice().reverse().map((d) => h('tr', null,
+          h('td', null, isi(d.jenis)), h('td', null, isi(d.nomor)), h('td', {class: 'nw'}, tgl(d.tanggal)),
+          h('td', null, d.file ? h('div', {class: 'baris-tombol'}, tombolPdf(d.file), keteranganFile(d.file)) : h('span', {class: 'redup'}, 'Belum ada file')),
+          h('td', null, isi(d.catatan)))))))
+        : h('p', {class: 'redup'}, 'Belum ada dokumen kerja. Klik Ubah data, lalu + Tambah dokumen.');
+      return [tabelKontrak && h('h3', null, 'Riwayat kontrak PKWT'), tabelKontrak, h('h3', null, 'Dokumen kerja'),
+        h('p', {class: 'kecil redup'}, 'Perjanjian kerja, SK pengangkatan, perjanjian magang, addendum, dan dokumen kerja lainnya.'), tabelDokumen].flat();
+    },
     gaji: () => {
       const kini = s.gaji_saat_ini;
       return s.gaji_list.length ? h('div', {class: 'gulir'}, h('table', {class: 'tabel'},
@@ -304,6 +316,39 @@ export function bukaFormPegawai(id) {
     if (habis) infoKontrak.replaceChildren(h('b', null, 'Jatah perpanjangan sudah habis.'), h('span', null, 'Batas di Pengaturan: maksimal ' + param.pkwt_maks_perpanjangan + ' kali perpanjangan. Perpanjangan ini tetap bisa disimpan.'));
   }}, '+ Perpanjang kontrak');
 
+  // Dokumen kerja (semua status). Dokumen yang sudah tersimpan tidak bisa dihapus dari sini.
+  const barisDok = [];
+  const wadahDok = h('div', {class: 'kontak-wadah'});
+  const kosongDok = h('p', {class: 'kecil redup'}, 'Belum ada dokumen.');
+  const tambahDok = (d, baru) => {
+    const i = ++nomorKontrak;
+    const daftarJenis = !d.jenis || OPSI.jenisDokumenKerja.includes(d.jenis) ? OPSI.jenisDokumenKerja : OPSI.jenisDokumenKerja.concat(d.jenis);
+    const jenis = pilih('pd-jenis-' + i, daftarJenis.map((x) => [x, x]), d.jenis);
+    const nomorDok = teks('pd-nomor-' + i, d.nomor), tglDok = tanggal('pd-tgl-' + i, d.tanggal), catatanDok = teks('pd-catatan-' + i, d.catatan);
+    const pdf = pilihPdf('pd-file-' + i, 'File dokumen');
+    const judul = h('legend', null, (d.jenis || 'Dokumen baru') + (baru ? ' (baru)' : ''));
+    jenis.addEventListener('change', () => { judul.textContent = (jenis.value || 'Dokumen baru') + (baru ? ' (baru)' : ''); });
+    const item = {file: d.file || null, jenis, nomorDok, tglDok, catatanDok, pdf, baru};
+    const kartu = h('fieldset', {class: 'kontak'}, judul,
+      grid(medan('Jenis dokumen', jenis, {wajib: true}), medan('Nomor dokumen', nomorDok), medan('Tanggal dokumen', tglDok, {wajib: true}),
+        h('div', {class: 'medan'}, h('label', {for: 'pd-file-' + i}, 'File (PDF)', !item.file && h('span', {class: 'wajib', title: 'Wajib diisi'}, ' *')),
+          item.file && h('div', {class: 'baris-tombol'}, tombolPdf(item.file), keteranganFile(item.file)),
+          item.file && h('span', {class: 'kecil redup'}, 'Pilih file lain hanya bila ingin mengganti file ini.'), pdf),
+        medan('Catatan', catatanDok, {lebar: true})),
+      baru && h('div', {class: 'baris-tombol'}, h('span', {class: 'pegas'}), h('button', {class: 'btn btn-kecil', type: 'button', onclick: () => { barisDok.splice(barisDok.indexOf(item), 1); kartu.remove(); kosongDok.hidden = barisDok.length > 0; }}, 'Batalkan dokumen ini')));
+    barisDok.push(item);
+    wadahDok.append(kartu);
+    kosongDok.hidden = true;
+  };
+  dokumenDari(lama).forEach((d) => tambahDok(d, false));
+  kosongDok.hidden = barisDok.length > 0;
+  const tambahDokumen = h('button', {class: 'btn', type: 'button', onclick: () => {
+    const st = selStatus.value;
+    const saran = st === STATUS.magang ? 'Perjanjian magang' : st === STATUS.tetap && !barisDok.length ? 'Perjanjian kerja (PKWTT)' : '';
+    tambahDok({jenis: OPSI.jenisDokumenKerja.includes(saran) ? saran : ''}, true);
+    barisDok.at(-1).jenis.focus();
+  }}, '+ Tambah dokumen');
+
   // Administrasi & SKK
   const bpjsKes = teks('p-bpjs-kes', lama?.bpjs_kes_no, {inputmode: 'numeric'});
   const bpjsTk = teks('p-bpjs-tk', lama?.bpjs_tk_no, {inputmode: 'numeric'});
@@ -326,6 +371,8 @@ export function bukaFormPegawai(id) {
   const bagGaji = bagian('Gaji', grid(infoGaji, mGaji, mTunjangan, mBerlaku, mCatatanGaji));
   const bagMagang = bagian('Periode magang', grid(medan('Mulai magang', magangMulai, {wajib: true}), medan('Selesai magang', magangSelesai, {wajib: true}), medan('Institusi asal', institusi)));
   const bagKontrak = bagian('Riwayat kontrak', h('p', {class: 'kecil redup'}, 'Setiap kontrak dan perpanjangan disimpan sebagai baris sendiri; kontrak lama tidak ditimpa. Kontrak berakhir di tabel dan peringatan diambil dari kontrak terbaru.'), wadahKontrak, infoKontrak, h('div', null, perpanjang));
+  const bagDokumen = bagian('Dokumen kerja', h('p', {class: 'kecil redup'}, 'Perjanjian kerja (PKWTT), SK pengangkatan, perjanjian magang, addendum, dan dokumen kerja lainnya. Tiap dokumen disimpan sebagai baris sendiri; dokumen lama tidak ditimpa.'),
+    wadahDok, kosongDok, h('div', null, tambahDokumen));
   const bagSkk = bagian('SKK / STRA', grid(medan('No. SKK / STRA', skkNo), medan('Berlaku s.d.', skkBerlaku),
     h('div', {class: 'medan medan-lebar'}, h('label', {for: 'p-skk-file'}, 'File sertifikat (PDF)'),
       lama?.skk_file && h('div', {class: 'baris-tombol'}, tombolPdf(lama.skk_file), keteranganFile(lama.skk_file)), skkPdf)));
@@ -338,6 +385,7 @@ export function bukaFormPegawai(id) {
     mTunjangan.hidden = magang;
     bagMagang.hidden = !magang;
     bagKontrak.hidden = st !== STATUS.pkwt;
+    bagDokumen.hidden = !st;
     if (st === STATUS.pkwt && !barisKontrak.length) tambahKontrak({ke: 0, mulai: tglMasuk.value}, true);
     bantuBpjs.hidden = !magang;
     bagSkk.hidden = !(jab?.skk || (!jab && (lama?.skk_no || lama?.no_skk)));
@@ -357,7 +405,7 @@ export function bukaFormPegawai(id) {
   const terhubung = lihat?.proyek_diikuti.length || 0;
   const hapus = id && h('button', {class: 'btn btn-bahaya', type: 'button', disabled: terhubung > 0, title: terhubung ? 'Sudah tercatat di ' + terhubung + ' Tim Proyek. Tandai Keluar bila sudah tidak bekerja.' : 'Hanya untuk data yang salah input', onclick: aman(async () => {
     if (!yakin) { yakin = true; hapus.textContent = 'Klik lagi untuk menghapus'; return; }
-    const berkas = [...kontrakDari(lama).map((k) => k.file?.path), lama.skk_file?.path].filter(Boolean);
+    const berkas = [...kontrakDari(lama).map((k) => k.file?.path), ...dokumenDari(lama).map((d) => d.file?.path), lama.skk_file?.path].filter(Boolean);
     await store.hapus(id);
     try { await store.hapusBerkas(berkas); } catch (e) { console.warn('File tidak terhapus', e); }
     await muatData(); dlg.close();
@@ -387,6 +435,12 @@ export function bukaFormPegawai(id) {
     if (st === STATUS.magang && (!magangMulai.value || !magangSelesai.value)) kurang.push('Periode magang (mulai dan selesai)');
     if (st === STATUS.pkwt) barisKontrak.forEach((b) => { if (!b.mulai.value || !b.akhir.value) kurang.push(namaKontrak(b.ke) + ': tanggal mulai dan berakhir'); });
     if (gajiBerubah() && !berlaku.value) kurang.push('Gaji: tanggal berlaku mulai');
+    barisDok.forEach((b, i) => {
+      const nama = 'Dokumen kerja ' + (i + 1) + (b.jenis.value ? ' (' + b.jenis.value + ')' : '');
+      if (!b.jenis.value) kurang.push(nama + ': jenis dokumen');
+      if (!b.tglDok.value) kurang.push(nama + ': tanggal dokumen');
+      if (!b.file && !b.pdf.berkas()) kurang.push(nama + ': file PDF');
+    });
     if (keluar && !tglKeluar.value) kurang.push('Tanggal keluar');
     if (keluar && !alasan.value) kurang.push('Alasan keluar');
     if (keluar && alasan.value === 'Lainnya' && !alasanLain.value.trim()) kurang.push('Keterangan alasan keluar');
@@ -449,12 +503,19 @@ export function bukaFormPegawai(id) {
         }
         data.kontrak = kontrak;
       } else if (lama) data.kontrak = kontrakDari(lama).map(bersih); // arsip tetap disimpan
+      const dokumen = [];
+      for (const b of barisDok) {
+        const file = await unggah(b.pdf);
+        dokumen.push(bersih({jenis: b.jenis.value, nomor: b.nomorDok.value.trim(), tanggal: b.tglDok.value, file: file || b.file, catatan: b.catatanDok.value.trim()}));
+      }
+      data.dokumen = dokumen;
       const gajiBaru = riwayatGaji.map((g) => bersih(g));
       if (gajiBerubah()) gajiBaru.push(bersih({berlaku: berlaku.value, ...nilaiGaji(), catatan: catatanGaji.value.trim()}));
       data.gaji_riwayat = gajiBaru;
       const isiSimpan = bersih(data);
       if (!isiSimpan.kontrak?.length) delete isiSimpan.kontrak;
       if (!isiSimpan.gaji_riwayat?.length) delete isiSimpan.gaji_riwayat;
+      if (!isiSimpan.dokumen?.length) delete isiSimpan.dokumen;
       await store.simpan('sdm', pid, isiSimpan);
       await muatData(); dlg.close(); S.render(); pesan('Data pegawai tersimpan.');
     } catch (e) {
@@ -476,7 +537,7 @@ export function bukaFormPegawai(id) {
     bagian('Rekening bank', grid(medan('Nama bank', bankNama), medan('Nomor rekening', bankRek), medan('Atas nama', bankAtasNama))),
     bagian('Kepegawaian', grid(medan('Jabatan', selJabatan, {wajib: true, bantuan: 'Daftar jabatan diatur di Pengaturan.'}), medan('Status kerja', selStatus, {wajib: true}), medan('Tanggal masuk', tglMasuk, {wajib: true}),
       h('div', {class: 'medan medan-lebar'}, h('label', {class: 'centang'}, centangTim, 'Dapat dipilih sebagai Tim Proyek'), h('span', {class: 'kecil redup'}, 'Staf manajemen seperti principal, admin, dan keuangan biasanya tidak dicentang.')))),
-    bagMagang, bagGaji, bagKontrak,
+    bagMagang, bagGaji, bagKontrak, bagDokumen,
     bagian('Administrasi', grid(medan('No. BPJS Kesehatan', bpjsKes), medan('No. BPJS Ketenagakerjaan', bpjsTk), medan('No. NPWP / NIK', npwp), bantuBpjs)),
     bagSkk,
     bagian('Status', grid(medan('Status aktif', selAktif, {bantuan: 'Pegawai yang keluar tidak dihapus; riwayatnya tetap tersimpan.'}), ...mKeluar, medan('Catatan', catatan, {lebar: true}))),

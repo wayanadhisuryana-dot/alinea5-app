@@ -34,6 +34,7 @@ export const OPSI = {
   sumberDana: ['Dana titipan klien', 'Kas Alinea'],
   jenisHutang: ['Pinjaman bank', 'Pinjaman pribadi', 'Sewa kantor', 'Pajak terutang', 'Cicilan aset', 'Lainnya'],
   statusPegawai: STATUS_KERJA.slice(),
+  jenisDokumenKerja: ['Perjanjian kerja (PKWTT)', 'SK pengangkatan', 'Perjanjian magang', 'SK perubahan jabatan / gaji', 'Addendum perjanjian kerja', 'Lainnya'],
   peranTim: ['PIC', 'Pengawas', 'Desainer', 'Drafter', 'Mandor', 'Tukang', 'Lainnya'],
   kategoriAset: ['Komputer / laptop', 'Software / lisensi', 'Kendaraan', 'Printer / plotter', 'Peralatan lapangan', 'Furnitur kantor', 'Lainnya'],
   kondisi: ['Baik', 'Perlu servis', 'Rusak', 'Hilang'],
@@ -54,6 +55,7 @@ export const OPSI_BISA_DIATUR = {
   perjanjianVendor: 'Jenis perjanjian vendor (Vendor & Tukang)',
   jenisHutang: 'Jenis hutang (Hutang Lain)',
   peranTim: 'Peran di Tim Proyek (Proyek)',
+  jenisDokumenKerja: 'Jenis dokumen kerja (SDM)',
   kategoriAset: 'Kategori aset (Aset)',
 };
 const BAWAAN = Object.fromEntries(Object.entries(OPSI).map(([k, v]) => [k, v.slice()]));

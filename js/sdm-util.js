@@ -73,6 +73,12 @@ export function kontrakDari(s) {
 }
 export const kontrakTerbaru = (s) => kontrakDari(s).at(-1) || null;
 
+// Dokumen kerja untuk semua status (perjanjian kerja PKWTT, SK pengangkatan, perjanjian magang, addendum, dll),
+// urut dari yang paling lama. Satu baris per dokumen; dokumen lama tidak ditimpa.
+export const dokumenDari = (s) => (Array.isArray(s?.dokumen) ? s.dokumen : [])
+  .map((d) => ({jenis: d.jenis || '', nomor: d.nomor || '', tanggal: d.tanggal || '', file: d.file || null, catatan: d.catatan || ''}))
+  .sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+
 // Riwayat gaji, urut dari yang paling lama berlaku. Data lama (gaji/tunjangan tunggal) ikut dibaca.
 export function gajiDari(s) {
   let daftar = Array.isArray(s?.gaji_riwayat) ? s.gaji_riwayat : [];
