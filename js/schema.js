@@ -47,7 +47,7 @@ export const TABEL = {
     isian: [
       {k: 'kode', label: 'Kode proyek', t: 'teks', wajib: true, contoh: 'A5-26-001', pola: 'A5-\\d{2}-\\d{3}', unik: true},
       {k: 'nama', label: 'Nama proyek', t: 'teks', wajib: true},
-      {k: 'klien_id', label: 'Klien', t: 'klien'},
+      {k: 'klien_id', label: 'Klien', t: 'klien', wajib: true},
       {k: 'lokasi', label: 'Lokasi (kab/kota)', t: 'pilih', opsi: 'lokasi'},
       {k: 'jenis_bangunan', label: 'Jenis bangunan', t: 'pilih', opsi: 'jenisBangunan'},
       {k: 'layanan', label: 'Jenis layanan', t: 'pilih', opsi: 'layanan'},
@@ -119,7 +119,7 @@ export const TABEL = {
     bantuan: 'Satu baris per kontrak. Setiap perubahan permintaan klien yang menambah pekerjaan dicatat sebagai addendum tertulis di kolom Nilai addendum.',
     isian: [
       {k: 'kode', label: 'Proyek', t: 'proyek', wajib: true},
-      {k: 'klien_id', label: 'Klien', t: 'klien'},
+      {k: 'klien_id', label: 'Klien', t: 'klien', wajib: true},
       {k: 'no_kontrak', label: 'No. kontrak / SPK', t: 'teks'},
       {k: 'tgl_kontrak', label: 'Tanggal kontrak', t: 'tanggal'},
       {k: 'jenis_perjanjian', label: 'Jenis perjanjian', t: 'pilih', opsi: 'jenisPerjanjian'},

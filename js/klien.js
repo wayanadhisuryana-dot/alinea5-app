@@ -296,7 +296,7 @@ function bukaPratinjauImpor(baris) {
 
 // ---------- pemilih klien untuk formulir Proyek dan Kontrak ----------
 // Nilai (id klien) ada di input tersembunyi ber-id `id`; teks yang diketik hanya untuk mencari.
-export function pilihKlien(id, nilai, bolehTambah) {
+export function pilihKlien(id, nilai, bolehTambah, wajib) {
   const namaDari = (kid) => S.db.klien.find((k) => k.id === kid)?.nama || '';
   const nilaiEl = h('input', {type: 'hidden', id, value: nilai || ''});
   const cari = h('input', {id: id + '-cari', type: 'text', placeholder: 'Ketik untuk mencari, lalu pilih dari daftar', autocomplete: 'off', role: 'combobox', 'aria-expanded': 'false', 'aria-controls': id + '-daftar', 'aria-label': 'Cari klien'});
@@ -311,15 +311,17 @@ export function pilihKlien(id, nilai, bolehTambah) {
     daftar.replaceChildren(...[
       ...cocok.map((k) => h('button', {class: 'kombo-opsi', type: 'button', role: 'option', 'aria-selected': String(k.id === nilaiEl.value), onmousedown: tahan, onclick: () => pilih(k.id)}, h('span', null, k.nama), k.kontak_utama && h('span', {class: 'kecil redup'}, ' · ' + k.kontak_utama))),
       !cocok.length && h('div', {class: 'kombo-kosong redup'}, 'Tidak ada klien yang cocok.'),
-      nilaiEl.value && h('button', {class: 'kombo-opsi redup', type: 'button', onmousedown: tahan, onclick: () => pilih('')}, 'Kosongkan pilihan'),
+      !wajib && nilaiEl.value && h('button', {class: 'kombo-opsi redup', type: 'button', onmousedown: tahan, onclick: () => pilih('')}, 'Kosongkan pilihan'),
+      !bolehTambah && h('div', {class: 'kombo-kosong redup kecil'}, 'Klien belum ada di daftar? Minta admin menambahkannya di menu Klien.'),
       bolehTambah && h('button', {class: 'kombo-opsi kombo-tambah', type: 'button', onmousedown: tahan, onclick: () => { const teks = cari.value.trim(); tutup(); bukaFormKlien(null, {namaAwal: teks && teks.toLowerCase() !== terpilih ? teks : '', setelahSimpan: (rec) => pilih(rec.id)}); }}, '+ Tambah klien baru')].filter(Boolean));
     daftar.hidden = false; cari.setAttribute('aria-expanded', 'true');
   };
+  nilaiEl.pilih = pilih;
   cari.value = namaDari(nilai);
   cari.addEventListener('focus', buka);
   cari.addEventListener('input', buka);
   cari.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !daftar.hidden) { ev.preventDefault(); ev.stopPropagation(); tutup(); } });
   // Teks yang tidak dipilih dari daftar tidak pernah tersimpan: kembali ke pilihan terakhir.
-  cari.addEventListener('blur', () => setTimeout(() => { if (!wadah.contains(document.activeElement)) { if (!cari.value.trim()) nilaiEl.value = ''; cari.value = namaDari(nilaiEl.value); tutup(); } }, 120));
+  cari.addEventListener('blur', () => setTimeout(() => { if (!wadah.contains(document.activeElement)) { if (!cari.value.trim() && !wajib) nilaiEl.value = ''; cari.value = namaDari(nilaiEl.value); tutup(); } }, 120));
   return wadah;
 }

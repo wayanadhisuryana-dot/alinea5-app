@@ -220,7 +220,7 @@ function buatMasukan(f, nilai, tabel) {
   if (f.t === 'catatan') return h('textarea', {id, rows: '2', required: f.wajib}, nilai ?? '');
   if (f.t === 'pilih' || f.t === 'yt') return pilihan(id, OPSI[f.t === 'yt' ? 'yt' : f.opsi].map((o) => [o, o]), nilai, f.wajib);
   if (f.t === 'proyek') return pilihan(id, urutkan(S.db.proyek, 'kode').map((p) => [p.kode, p.kode + ' — ' + isi(p.nama)]), nilai, f.wajib);
-  if (f.t === 'klien') return pilihKlien(id, nilai, S.user.role === 'admin');
+  if (f.t === 'klien') return pilihKlien(id, nilai, S.user.role === 'admin', f.wajib);
   if (f.t === 'tim') return pilihan(id, nilaiUnik('tim', 'nama').map((x) => [x, x]), nilai, f.wajib);
   if (f.t === 'tanggal') return h('input', {id, type: 'date', value: nilai ?? '', required: f.wajib});
   if (f.t === 'angka') return h('input', {id, type: 'number', step: 'any', value: nilai ?? '', required: f.wajib});
@@ -259,6 +259,11 @@ function bukaForm(tabel, baris) {
     for (const f of def.isian) {
       const v = bacaMasukan(f, form);
       if (v != null) data[f.k] = v;
+      if (f.t === 'klien' && f.wajib && v == null) {
+        galat.textContent = 'Klien wajib dipilih dari daftar' + (S.user.role === 'admin' ? '. Jika belum ada, pakai "+ Tambah klien baru".' : '. Jika belum ada, minta admin menambahkannya di menu Klien.');
+        form.querySelector('#f-klien_id-cari')?.focus();
+        return;
+      }
       if (f.unik && v != null && S.db[tabel].some((r) => r.id !== baris?.id && String(r[f.k]).toLowerCase() === String(v).toLowerCase())) {
         galat.textContent = f.label + ' "' + v + '" sudah dipakai.';
         return;
@@ -277,6 +282,14 @@ function bukaForm(tabel, baris) {
     galat,
     h('div', {class: 'form-kaki'}, hapus, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, 'Batal'), simpan));
   dlg = dialog((baris ? 'Ubah ' : 'Tambah ') + def.satuan, form);
+  if (tabel === 'kontrak') {
+    // Memilih proyek mengisi klien dari proyek itu bila klien kontrak masih kosong.
+    const pilihProyek = form.querySelector('#f-kode'), klien = form.querySelector('#f-klien_id');
+    pilihProyek.addEventListener('change', () => {
+      const ref = S.d.proyek.find((p) => p.kode === pilihProyek.value)?.klien_ref;
+      if (ref && !klien.value) klien.pilih(ref);
+    });
+  }
   if (tabel === 'tahap') {
     const pilihTahap = form.querySelector('#f-tahap'), bobot = form.querySelector('#f-bobot');
     pilihTahap.addEventListener('change', () => { const t = TAHAP.find((x) => x.nama === pilihTahap.value); if (t) bobot.value = String(+(t.bobot * 100).toFixed(4)); });
