@@ -1,4 +1,4 @@
-// Pengecekan format langsung saat mengetik untuk NPWP/NIK, No. HP, dan email.
+// Pengecekan format langsung saat mengetik untuk NIK, NPWP, No. HP, dan email.
 // Dipakai oleh semua formulir: tanda ✓ hijau saat benar, ✕ merah saat salah.
 import {h} from './ui.js';
 import {normHp, normNpwp, emailSah} from './klien-util.js';
@@ -14,6 +14,13 @@ export function periksaIsian(jenis, teks) {
     if (d.length > 16) return {status: 'salah', pesan: d.length + ' digit, kelebihan ' + (d.length - 16)};
     return {status: 'benar', pesan: d.length === 16 ? '16 digit' : '15 digit (format lama)', nilai: normNpwp(d).nilai};
   }
+  if (jenis === 'nik') {
+    const d = s.replace(/[.\-\s]/g, '');
+    if (!/^\d+$/.test(d)) return {status: 'salah', pesan: 'Hanya boleh angka'};
+    if (d.length < 16) return {status: 'salah', pesan: 'Baru ' + d.length + ' digit, kurang ' + (16 - d.length)};
+    if (d.length > 16) return {status: 'salah', pesan: d.length + ' digit, kelebihan ' + (d.length - 16)};
+    return {status: 'benar', pesan: '16 digit', nilai: d};
+  }
   if (jenis === 'hp') {
     const r = normHp(s);
     return r.galat ? {status: 'salah', pesan: r.galat} : {status: 'benar', pesan: 'Disimpan sebagai ' + r.nilai, nilai: r.nilai};
@@ -24,8 +31,8 @@ export function periksaIsian(jenis, teks) {
   return {status: 'benar', pesan: '', nilai: s};
 }
 
-const PETUNJUK = {npwp: 'Opsional. 15 atau 16 digit.', hp: 'Contoh: 081234567890', email: 'Contoh: nama@contoh.com'};
-const ATRIBUT = {npwp: {inputmode: 'numeric', placeholder: '16 digit'}, hp: {inputmode: 'tel', placeholder: '08xxxxxxxxxx'}, email: {inputmode: 'email', placeholder: 'nama@contoh.com'}};
+const PETUNJUK = {nik: '16 digit sesuai KTP.', npwp: 'Opsional. 15 atau 16 digit.', hp: 'Contoh: 081234567890', email: 'Contoh: nama@contoh.com'};
+const ATRIBUT = {nik: {inputmode: 'numeric', placeholder: '16 digit'}, npwp: {inputmode: 'numeric', placeholder: '16 digit'}, hp: {inputmode: 'tel', placeholder: '08xxxxxxxxxx'}, email: {inputmode: 'email', placeholder: 'nama@contoh.com'}};
 
 // Membungkus sebuah <input> dengan tanda dan keterangan. NPWP menampilkan ✕ sejak mengetik
 // (hitungan digitnya membantu); HP dan email baru menampilkan ✕ setelah kotaknya ditinggalkan.
@@ -36,7 +43,7 @@ export function kotakCek(input, jenis, petunjuk) {
   const ket = h('span', {class: 'cek-ket kecil', id: input.id + '-ket'});
   input.setAttribute('aria-describedby', ket.id);
   const kotak = h('div', {class: 'cek'}, h('div', {class: 'cek-isian'}, input, tanda), ket);
-  let disentuh = jenis === 'npwp';
+  let disentuh = jenis === 'npwp' || jenis === 'nik';
   const segar = () => {
     const r = periksaIsian(jenis, input.value);
     const tampil = r.status === 'salah' && !disentuh ? 'kosong' : r.status;

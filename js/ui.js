@@ -29,6 +29,16 @@ export const tgl = (s) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || '');
   return m ? +m[3] + ' ' + BULAN[+m[2] - 1] + ' ' + m[1] : '—';
 };
+// Isian rupiah: diketik dengan pemisah ribuan, dibaca kembali sebagai angka (atau null bila kosong).
+export const formatUang = (teks) => {
+  const minus = /^\s*-/.test(teks), angka = String(teks).replace(/\D/g, '');
+  return angka ? (minus ? '-' : '') + idn(angka) : '';
+};
+export const bacaUang = (teks) => {
+  const d = String(teks ?? '').replace(/\./g, '').replace(/[^\d-]/g, '');
+  return d === '' || d === '-' ? null : +d;
+};
+export const ukuranFile = (b) => (b >= 1048576 ? idn(b / 1048576, 1) + ' MB' : idn(Math.max(1, Math.ceil(b / 1024))) + ' KB');
 export const kosong = (v) => v == null || v === '';
 export const isi = (v) => (kosong(v) ? '—' : String(v));
 
@@ -88,8 +98,17 @@ export const sekali = (fn) => {
   };
 };
 
+// Pengaman: nilai false/undefined yang tidak sengaja ikut tampil sebagai teks dibuang dari layar.
+export function buangTeksPalsu(akar) {
+  const jalan = document.createTreeWalker(akar, NodeFilter.SHOW_TEXT);
+  const buang = [];
+  while (jalan.nextNode()) if (/^(false|undefined|null)$/.test(jalan.currentNode.nodeValue.trim())) buang.push(jalan.currentNode);
+  for (const t of buang) { console.warn('Teks "' + t.nodeValue + '" dibuang dari', t.parentElement); t.remove(); }
+}
+
 export function dialog(judul, isiDialog) {
   const dlg = h('dialog', {class: 'dialog'}, h('h2', null, judul), isiDialog);
+  buangTeksPalsu(dlg);
   dlg.addEventListener('close', () => dlg.remove());
   document.body.append(dlg);
   dlg.showModal();

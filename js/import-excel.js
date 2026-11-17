@@ -42,7 +42,7 @@ const PETA = {
     'Proyek': {tabel: 'proyek', wajib: 0, k: {kode: [0, 't'], nama: [1, 't'], klien: [2, 't'], lokasi: [3, 't'], jenis_bangunan: [4, 't'], layanan: [5, 't'], pic: [6, 't'], tim_pendukung: [7, 't'], pengawas: [8, 't'], ada_vendor: [9, 't'], vendor: [10, 't'], mulai: [11, 'd'], target: [12, 'd'], perkiraan: [13, 'd'], tahap_sekarang: [15, 't'], status: [18, 't'], perubahan_belum_tertulis: [20, 't'], catatan: [23, 't']}},
     'Progres Tahap': {tabel: 'tahap', wajib: 0, k: {kode: [0, 't'], pic: [2, 't'], tahap: [3, 't'], bobot: [4, 'n'], rencana_mulai: [5, 'd'], rencana_selesai: [6, 'd'], selesai: [7, 'n'], tgl_disetujui: [8, 'd'], catatan: [11, 't']}},
     'Masalah & Risiko': {tabel: 'masalah', wajib: 4, k: {tanggal: [0, 'd'], kode: [1, 't'], kategori: [3, 't'], uraian: [4, 't'], dampak: [5, 't'], dokumen_tertulis: [6, 't'], tindakan: [7, 't'], pic: [8, 't'], target: [9, 'd'], status: [10, 't']}},
-    'Daftar': {tabel: 'tim', wajib: 11, mulai: 3, k: {nama: [11, 't'], peran: [12, 't']}},
+    // Daftar nama tim di file ini tidak diimpor lagi: orang internal kini diambil dari SDM.
   },
 };
 

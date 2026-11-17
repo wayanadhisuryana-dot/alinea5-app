@@ -1,6 +1,7 @@
 // Rumus yang di Excel ada di kolom abu-abu. Semua fungsi murni: masukan data + tanggal hari ini.
 import {TAHAP, TOLERANSI} from './schema.js';
 import {normNama, kontakDari} from './klien-util.js';
+import {aturSdm, cariJabatan, kontrakDari, gajiSaatIni, gajiDari, totalGaji, peringatanPegawai, masaKerja, bawaanTimProyek, refSdm, STATUS, STATUS_PENDEK} from './sdm-util.js';
 
 export const n = (v) => (v == null || v === '' || isNaN(+v) ? 0 : +v);
 const jumlah = (rows, f) => rows.reduce((a, r) => a + n(typeof f === 'function' ? f(r) : r[f]), 0);
@@ -14,7 +15,8 @@ const bobotDefault = (nama) => (TAHAP.find((t) => t.nama === nama) || {}).bobot 
 const batasHari = (tgl, today, batas, label) => (!tgl ? '' : tgl < today ? 'HABIS' : hari(tgl, today) <= batas ? label : '');
 
 // db: {tabel: [baris]} -> salinan dengan kolom hitungan ditambahkan pada tiap baris.
-export function hitung(db, today = hariIni()) {
+// atur: isi catatan pengaturan admin (jabatan dan parameter peringatan SDM).
+export function hitung(db, today = hariIni(), atur = {}) {
   const t = (nama) => db[nama] || [];
   const namaProyek = Object.fromEntries(t('proyek').map((p) => [p.kode, p.nama]));
   const np = (kode) => namaProyek[kode] ?? (kode ? 'Kode tidak ada di daftar Proyek' : '');
@@ -87,13 +89,27 @@ export function hitung(db, today = hariIni()) {
     return {...h, sisa, alert};
   });
 
+  const {jabatan, param} = aturSdm(atur);
   const sdm = t('sdm').map((s) => {
-    const sisa_hari = s.kontrak_berakhir ? hari(s.kontrak_berakhir, today) : null;
+    const jab = cariJabatan(s, jabatan);
+    const kontrak = kontrakDari(s), akhir = kontrak.at(-1);
+    const gaji = gajiSaatIni(s, today);
+    const peringatan = peringatanPegawai(s, jab, param, today);
+    const keluar = s.aktif === 'Keluar';
+    const proyekDiikuti = proyek.flatMap((p) => (Array.isArray(p.tim) ? p.tim : []).filter((a) => a.ref === refSdm(s.id)).map((a) => ({
+      kode: p.kode, nama: p.nama, status: p.status, peran: a.peran, mulai: a.mulai, selesai: a.selesai,
+      sedang: !['Selesai', 'Batal'].includes(p.status) && (!a.selesai || a.selesai >= today),
+    })));
     return {
-      ...s, sisa_hari,
-      alert_kontrak: sisa_hari == null ? '' : sisa_hari < 0 ? 'HABIS' : sisa_hari <= 60 ? '≤60 hari' : '',
-      masa_kerja: s.tgl_masuk ? hari(today, s.tgl_masuk) / 365.25 : null,
-      alert_sertifikat: batasHari(s.skk_berlaku, today, 90, '≤90 hari'),
+      ...s, aktif: keluar ? 'Keluar' : 'Aktif',
+      jabatan_id: jab?.id ?? s.jabatan_id ?? null, jabatan_nama: jab?.nama || '', perlu_skk: !!jab?.skk || !!s.skk_no || !!s.no_skk,
+      skk_no: s.skk_no ?? s.no_skk, status_pendek: STATUS_PENDEK[s.status] || s.status || '',
+      tim_proyek: s.tim_proyek ?? bawaanTimProyek(jab?.id),
+      kontrak_list: kontrak, gaji_list: gajiDari(s), gaji_saat_ini: gaji, gaji_total: totalGaji(gaji),
+      kontrak_akhir: s.status === STATUS.pkwt || !s.status ? akhir?.berakhir || null : s.status === STATUS.magang ? s.magang_selesai || null : null,
+      peringatan, jml_peringatan: peringatan.length,
+      masa_kerja: masaKerja(s.tgl_masuk, keluar && s.tgl_keluar ? s.tgl_keluar : today),
+      proyek_diikuti: proyekDiikuti,
     };
   });
 
@@ -143,7 +159,7 @@ export function ringkasan(d) {
     pct_diterima: nilai ? diterima / nilai : 0,
     piutang: jumlah(d.kontrak, 'piutang'), belum_ditagih: jumlah(d.kontrak, 'belum_ditagih'), umur,
     hutang_vendor: jumlah(d.vendor, 'hutang'), retensi: jumlah(d.vendor, 'retensi_ditahan'), hutang_lain: jumlah(d.hutang_lain, 'sisa'),
-    gaji_bulanan: jumlah(d.sdm, (s) => n(s.gaji) + n(s.tunjangan)), nilai_buku_aset: jumlah(d.aset, 'nilai_buku'),
+    gaji_bulanan: jumlah(d.sdm.filter((s) => s.aktif !== 'Keluar'), 'gaji_total'), nilai_buku_aset: jumlah(d.aset, 'nilai_buku'),
     proyek_total: d.proyek.length, proyek_berjalan: berjalan.length,
     proyek_tertunda: d.proyek.filter((p) => /^Tertunda/.test(p.status || '')).length,
     proyek_selesai: d.proyek.filter((p) => p.status === 'Selesai').length,
@@ -152,6 +168,7 @@ export function ringkasan(d) {
     rata_progres: progresBerjalan.length ? jumlah(progresBerjalan, 'progres') / progresBerjalan.length : null,
     masalah_terbuka: terbuka.length, masalah_tinggi: terbuka.filter((m) => m.dampak === 'Tinggi').length,
     masalah_lewat: terbuka.filter((m) => m.lewat === 'LEWAT').length,
+    sdm_peringatan: jumlah(d.sdm, 'jml_peringatan'), sdm_pegawai_peringatan: d.sdm.filter((s) => s.jml_peringatan).length,
   };
 }
 
@@ -165,10 +182,9 @@ export function temuan(d, fmtTanggal = (x) => x) {
     butir('Vendor', 'Vendor tanpa perjanjian tertulis', d.vendor.filter((v) => v.dokumen_tertulis === 'Tidak'), (v) => v.vendor + ' (' + v.nama_proyek + ')'),
     butir('Hutang', 'Kewajiban lewat jatuh tempo', d.hutang_lain.filter((h) => h.alert === 'LEWAT'), (h) => h.uraian || h.kreditur),
     butir('Hutang', 'Kewajiban jatuh tempo dalam 14 hari', d.hutang_lain.filter((h) => h.alert && h.alert !== 'LEWAT'), (h) => h.uraian || h.kreditur),
-    butir('SDM', 'Kontrak kerja habis atau berakhir dalam 60 hari', d.sdm.filter((s) => s.alert_kontrak), (s) => s.nama + ' (' + s.sisa_hari + ' hari)'),
-    butir('SDM', 'Tanpa dokumen kontrak kerja', d.sdm.filter((s) => s.dokumen_kontrak === 'Tidak'), (s) => s.nama),
-    butir('SDM', 'Belum terdaftar BPJS Ketenagakerjaan', d.sdm.filter((s) => s.bpjs_tk === 'Tidak'), (s) => s.nama),
-    butir('SDM', 'SKK/STRA habis atau berakhir dalam 90 hari', d.sdm.filter((s) => s.alert_sertifikat), (s) => s.nama + ' (s.d. ' + fmtTanggal(s.skk_berlaku) + ')'),
+    butir('SDM', 'Peringatan kontrak, SKK/STRA, atau magang', d.sdm.filter((s) => s.jml_peringatan), (s) => s.nama + ' (' + s.peringatan.map((p) => p.teks).join(', ') + ')'),
+    butir('SDM', 'Kontrak PKWT terbaru belum ada file PDF', d.sdm.filter((s) => s.aktif === 'Aktif' && s.status === STATUS.pkwt && s.kontrak_list.length && !s.kontrak_list.at(-1).file), (s) => s.nama),
+    butir('SDM', 'Belum ada No. BPJS Ketenagakerjaan', d.sdm.filter((s) => s.aktif === 'Aktif' && s.status !== STATUS.magang && !s.bpjs_tk_no && s.bpjs_tk !== 'Ya'), (s) => s.nama),
     butir('Aset', 'Lisensi atau pajak aset habis atau berakhir dalam 60 hari', d.aset.filter((a) => a.alert), (a) => a.nama + ' (s.d. ' + fmtTanggal(a.lisensi_sd) + ')'),
     butir('Aset', 'Aset tidak dalam kondisi baik', d.aset.filter((a) => a.kondisi && a.kondisi !== 'Baik'), (a) => a.nama + ' (' + a.kondisi + ')'),
     butir('Legal', 'Dokumen legal belum ada atau perlu dicek', d.legal.filter((l) => l.status === 'BELUM ADA / CEK'), (l) => l.dokumen),

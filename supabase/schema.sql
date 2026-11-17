@@ -115,7 +115,19 @@ grant execute on function public.peran() to authenticated;
 grant select, update on public.profiles to authenticated;
 grant select, insert, update, delete on public.records to authenticated;
 
--- 4. Admin pertama ----------------------------------------------------------
+-- 4. File PDF SDM (kontrak kerja, sertifikat SKK/STRA) ------------------------
+-- Disimpan privat di Supabase Storage, maksimal 10 MB per file, hanya PDF, dan hanya admin yang bisa
+-- mengunggah, membuka, atau menghapusnya.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('dokumen-sdm', 'dokumen-sdm', false, 10485760, array['application/pdf'])
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists dokumen_sdm_admin on storage.objects;
+create policy dokumen_sdm_admin on storage.objects for all to authenticated
+  using (bucket_id = 'dokumen-sdm' and public.peran() = 'admin')
+  with check (bucket_id = 'dokumen-sdm' and public.peran() = 'admin');
+
+-- 5. Admin pertama ----------------------------------------------------------
 -- Bila sudah ada yang mendaftar sebelum aturan di atas dipasang dan belum ada admin,
 -- pendaftar paling awal dijadikan admin.
 update public.profiles set role = 'admin', aktif = true

@@ -5,7 +5,7 @@ Admin dan tim arsitek mengisi data di browser; dashboard, status, umur piutang, 
 
 - **Tampilan:** situs statis (HTML + JavaScript tanpa proses build), ditayangkan lewat GitHub Pages.
 - **Data dan login:** Supabase (PostgreSQL + Auth). Repo ini **tidak berisi data** apa pun.
-- **Peran:** `admin` melihat semua tabel; `arsitek` hanya Proyek, Progres Tahap, Masalah, dan Tim (klien hanya bisa dipilih, tidak diubah).
+- **Peran:** `admin` melihat semua tabel; `arsitek` hanya Proyek (termasuk Tim Proyek), Progres Tahap, dan Masalah (klien dan orang internal hanya bisa dipilih, tidak diubah).
 
 Selama Supabase belum disambungkan, aplikasi berjalan dalam **mode demo**: data hanya tersimpan di browser yang sedang dipakai.
 
@@ -13,11 +13,14 @@ Selama Supabase belum disambungkan, aplikasi berjalan dalam **mode demo**: data 
 
 | Kelompok | Tabel | Akses |
 | --- | --- | --- |
-| Proyek | Proyek, Progres Tahap, Masalah & Risiko | admin, arsitek |
+| Proyek | Proyek (dengan Tim Proyek), Progres Tahap, Masalah & Risiko | admin, arsitek |
 | Master | Klien (dengan cegah duplikat, gabung, ekspor/impor Excel) | admin |
-| Master | Tim | admin, arsitek |
 | Keuangan | Kontrak, Termin & Piutang, Vendor & Tukang, Hutang Lain | admin |
-| Administrasi | SDM, Aset, Legal & Izin | admin |
+| Administrasi | SDM (riwayat kontrak dan gaji, file PDF, peringatan), Aset, Legal & Izin | admin |
+
+Tabel `tim` tidak tampil di menu: isinya direktori orang internal yang disalin otomatis dari SDM
+(nama, jabatan, aktif, boleh masuk Tim Proyek; tanpa gaji dan data pribadi) agar arsitek bisa memilih
+anggota Tim Proyek. File PDF SDM disimpan di Supabase Storage (bucket privat `dokumen-sdm`, hanya admin).
 
 Rumus mengikuti kolom abu-abu di Excel: nilai tagihan dari % kontrak, status dan umur piutang, hak dan hutang vendor,
 retensi, progres berbobot per tahap, status jadwal (toleransi −5% dan −15%), penyusutan garis lurus, serta peringatan
@@ -78,6 +81,10 @@ js/ui.js, js/state.js alat bantu tampilan dan keadaan bersama
 js/klien.js           modul Klien: daftar, formulir, gabung, impor, pemilih klien
 js/klien-util.js      aturan klien: normalisasi, validasi, duplikat
 js/klien-excel.js     ekspor, template, dan pembaca Excel klien
+js/sdm.js             modul SDM: daftar, halaman detail, formulir pegawai
+js/sdm-util.js        aturan SDM: jabatan, riwayat kontrak/gaji, batas PKWT, peringatan
+js/tim-proyek.js      penyunting Tim Proyek dan pemilih orang
+js/cek.js             cek format langsung (NIK, NPWP, No. HP, email)
 js/config.js          alamat dan kunci anon Supabase
 supabase/schema.sql   tabel, pemicu, dan Row Level Security
 ```

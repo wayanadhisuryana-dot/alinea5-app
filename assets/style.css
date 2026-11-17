@@ -175,3 +175,36 @@ textarea { resize: vertical; }
 .opsi summary { cursor: pointer; font-weight: 600; }
 .opsi[open] { display: flex; flex-direction: column; gap: 6px; }
 .opsi[open] summary { margin-bottom: 4px; }
+
+/* Modul SDM */
+.tengah-teks { text-align: center; }
+.teks-buruk { color: var(--buruk) !important; }
+.peringatan-daftar { display: flex; flex-direction: column; gap: 2px; }
+.peringatan { color: var(--waspada); font-size: .85rem; white-space: nowrap; }
+.peringatan-berat { color: var(--buruk); font-weight: 600; }
+.tabel-sdm td:first-child { white-space: normal; }
+.tabel-sdm td { overflow-wrap: anywhere; }
+.judul-baris { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--garis); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; cursor: pointer; color: var(--redup); white-space: nowrap; margin-bottom: -1px; }
+.tab:hover { color: var(--fg); }
+.tab[aria-selected=true] { color: var(--aksen); border-bottom-color: var(--aksen); font-weight: 600; }
+.rincian { display: grid; grid-template-columns: minmax(140px, 220px) minmax(0, 1fr); gap: 6px 16px; margin: 0 0 6px; }
+.rincian dt { color: var(--redup); }
+.rincian dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
+.dialog-lebar { width: min(880px, calc(100vw - 24px)); }
+.form-bagian { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--garis); }
+.form-bagian:first-child { border-top: 0; padding-top: 0; }
+.pilih-pdf { display: flex; flex-direction: column; gap: 4px; }
+.ubin-tautan { color: inherit; text-decoration: none; }
+.ubin-tautan:hover { border-color: var(--aksen); }
+@media (max-width: 560px) { .rincian { grid-template-columns: minmax(0, 1fr); gap: 0 0; } .rincian dd { margin-bottom: 8px; } }
+
+/* Tim Proyek dan tabel berisi isian */
+.tim-proyek { display: flex; flex-direction: column; gap: 10px; }
+.tabel-isian td { padding: 6px 8px; vertical-align: middle; }
+.tabel-isian input[type=text], .tabel-isian input[type=date], .tabel-isian select { padding: 5px 7px; }
+.tim-tambah { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.label-kosong { font-size: .85rem; }
+.kombo-grup { padding: 6px 10px 2px; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--redup); }
+@media (max-width: 560px) { .tim-tambah { grid-template-columns: minmax(0, 1fr); } }

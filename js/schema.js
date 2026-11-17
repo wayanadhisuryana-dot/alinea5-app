@@ -2,6 +2,7 @@
 // database menyimpan tiap baris sebagai JSON sehingga tidak perlu migrasi.
 
 import {SUMBER_KLIEN, SUMBER_BAWAAN, aturSumberKlien} from './klien-util.js';
+import {STATUS_KERJA} from './sdm-util.js';
 
 export const TAHAP = [
   {nama: '1. Konsep Rancangan', bobot: 0.1},
@@ -32,14 +33,15 @@ export const OPSI = {
   perjanjianVendor: ['Borongan per pekerjaan', 'Harian', 'PO material', 'Kontrak subkon', 'Lisan'],
   sumberDana: ['Dana titipan klien', 'Kas Alinea'],
   jenisHutang: ['Pinjaman bank', 'Pinjaman pribadi', 'Sewa kantor', 'Pajak terutang', 'Cicilan aset', 'Lainnya'],
-  statusPegawai: ['Tetap (PKWTT)', 'Kontrak (PKWT)', 'Freelance / per proyek', 'Magang', 'Tukang harian'],
-  jabatan: ['Principal / Direktur', 'Arsitek', 'Arsitek senior', 'Desainer interior', 'Drafter', 'Pengawas lapangan', 'Admin', 'Accountant / Keuangan', 'Mandor', 'Tukang'],
+  statusPegawai: STATUS_KERJA.slice(),
+  peranTim: ['PIC', 'Pengawas', 'Desainer', 'Drafter', 'Mandor', 'Tukang', 'Lainnya'],
   kategoriAset: ['Komputer / laptop', 'Software / lisensi', 'Kendaraan', 'Printer / plotter', 'Peralatan lapangan', 'Furnitur kantor', 'Lainnya'],
   kondisi: ['Baik', 'Perlu servis', 'Rusak', 'Hilang'],
 };
 
 // Pilihan yang boleh diubah admin dari menu Pengaturan. Daftar lain (status proyek, status masalah,
-// dampak, bentuk dokumen, sumber dana, kondisi, tahap, jenis klien) dipakai oleh rumus sehingga tetap.
+// dampak, bentuk dokumen, sumber dana, kondisi, tahap, jenis klien, status kerja) dipakai oleh rumus
+// sehingga tetap. Jabatan SDM punya bagian sendiri di Pengaturan.
 export const OPSI_BISA_DIATUR = {
   sumberKlien: 'Sumber klien (Klien)',
   lokasi: 'Lokasi kab/kota (Proyek)',
@@ -51,8 +53,7 @@ export const OPSI_BISA_DIATUR = {
   jenisVendor: 'Jenis vendor (Vendor & Tukang)',
   perjanjianVendor: 'Jenis perjanjian vendor (Vendor & Tukang)',
   jenisHutang: 'Jenis hutang (Hutang Lain)',
-  statusPegawai: 'Status pegawai (SDM)',
-  jabatan: 'Jabatan (SDM)',
+  peranTim: 'Peran di Tim Proyek (Proyek)',
   kategoriAset: 'Kategori aset (Aset)',
 };
 const BAWAAN = Object.fromEntries(Object.entries(OPSI).map(([k, v]) => [k, v.slice()]));
@@ -68,7 +69,8 @@ export function terapkanOpsi(atur = {}) {
 
 // Jenis isian (t): teks, catatan, angka, uang, persen, tanggal, pilih, yt,
 // hp, email, npwp (ketiganya dicek langsung saat mengetik dan disimpan dalam bentuk seragam),
-// proyek (kode proyek), klien (id klien, dipilih dari daftar), tim (nama anggota tim).
+// proyek (kode proyek), klien (id klien, dipilih dari daftar), tim (nama orang internal),
+// timproyek (daftar anggota Tim Proyek), anggota (nama, dipilih dari Tim Proyek di formulir yang sama).
 // akses: 'umum' = admin dan arsitek, 'admin' = hanya admin.
 // kolom: [kunci, judul, format] untuk daftar; kunci boleh hasil hitungan (lihat calc.js).
 export const TABEL = {
@@ -82,9 +84,9 @@ export const TABEL = {
       {k: 'lokasi', label: 'Lokasi (kab/kota)', t: 'pilih', opsi: 'lokasi'},
       {k: 'jenis_bangunan', label: 'Jenis bangunan', t: 'pilih', opsi: 'jenisBangunan'},
       {k: 'layanan', label: 'Jenis layanan', t: 'pilih', opsi: 'layanan'},
-      {k: 'pic', label: 'Arsitek PIC', t: 'tim'},
-      {k: 'tim_pendukung', label: 'Tim pendukung', t: 'teks', contoh: 'Pisahkan nama dengan koma'},
-      {k: 'pengawas', label: 'Pengawas lapangan', t: 'tim'},
+      {k: 'tim', label: 'Tim Proyek', t: 'timproyek'},
+      {k: 'pic', label: 'Arsitek PIC', t: 'anggota', bantuan: 'Dipilih dari anggota Tim Proyek di atas.'},
+      {k: 'pengawas', label: 'Pengawas lapangan', t: 'anggota', bantuan: 'Dipilih dari anggota Tim Proyek di atas.'},
       {k: 'ada_vendor', label: 'Ada tim tukang / mandor / vendor?', t: 'yt'},
       {k: 'vendor', label: 'Mandor / vendor / tukang', t: 'teks'},
       {k: 'mulai', label: 'Tanggal mulai', t: 'tanggal'},
@@ -136,14 +138,11 @@ export const TABEL = {
     bantuan: 'Satu baris per klien. Nama di sini menjadi pilihan di Proyek dan Kontrak.',
     isian: [], kolom: [],
   },
+  // Direktori orang internal, diisi otomatis dari SDM (tanpa gaji dan data pribadi) agar arsitek bisa
+  // memilih anggota Tim Proyek. Tidak tampil di menu.
   tim: {
-    label: 'Tim', satuan: 'anggota tim', grup: 'Master', akses: 'umum', urut: 'nama',
-    bantuan: 'Nama anggota tim, sumber pilihan PIC dan pengawas. Data gaji dan kontrak kerja ada di tabel SDM (hanya admin).',
-    isian: [
-      {k: 'nama', label: 'Nama', t: 'teks', wajib: true, unik: true},
-      {k: 'peran', label: 'Peran', t: 'teks'},
-    ],
-    kolom: [['nama', 'Nama'], ['peran', 'Peran']],
+    label: 'Tim', satuan: 'orang', grup: 'Master', akses: 'umum', urut: 'nama', tersembunyi: true,
+    bantuan: '', isian: [{k: 'nama', label: 'Nama', t: 'teks', wajib: true}], kolom: [['nama', 'Nama']],
   },
   kontrak: {
     label: 'Kontrak', satuan: 'kontrak', grup: 'Keuangan', akses: 'admin', urut: 'kode',
@@ -215,27 +214,11 @@ export const TABEL = {
     ],
     kolom: [['kreditur', 'Kreditur'], ['jenis', 'Jenis'], ['uraian', 'Uraian'], ['total', 'Total', 'uang'], ['dibayar', 'Dibayar', 'uang'], ['sisa', 'Sisa', 'uang'], ['cicilan', 'Cicilan / bulan', 'uang'], ['jatuh_tempo', 'Jatuh tempo', 'tanggal'], ['alert', 'Peringatan', 'pill']],
   },
+  // SDM punya halaman, formulir, dan halaman detail sendiri (js/sdm.js).
   sdm: {
     label: 'SDM', satuan: 'pegawai', grup: 'Administrasi', akses: 'admin', urut: 'nama',
-    bantuan: 'Kepegawaian dan kontrak kerja. PKWT (PP 35/2021) maksimal 5 tahun termasuk perpanjangan. Peringatan muncul 60 hari sebelum kontrak habis.',
-    isian: [
-      {k: 'nama', label: 'Nama', t: 'teks', wajib: true},
-      {k: 'jabatan', label: 'Jabatan', t: 'pilih', opsi: 'jabatan'},
-      {k: 'status', label: 'Status', t: 'pilih', opsi: 'statusPegawai'},
-      {k: 'tgl_masuk', label: 'Tanggal masuk', t: 'tanggal'},
-      {k: 'kontrak_mulai', label: 'Kontrak mulai', t: 'tanggal'},
-      {k: 'kontrak_berakhir', label: 'Kontrak berakhir', t: 'tanggal'},
-      {k: 'dokumen_kontrak', label: 'Dokumen kontrak ada?', t: 'yt'},
-      {k: 'gaji', label: 'Gaji pokok per bulan', t: 'uang'},
-      {k: 'tunjangan', label: 'Tunjangan per bulan', t: 'uang'},
-      {k: 'bpjs_kes', label: 'BPJS Kesehatan', t: 'yt'},
-      {k: 'bpjs_tk', label: 'BPJS Ketenagakerjaan', t: 'yt'},
-      {k: 'npwp', label: 'NPWP ada?', t: 'yt'},
-      {k: 'no_skk', label: 'No. SKK / STRA', t: 'teks'},
-      {k: 'skk_berlaku', label: 'SKK / STRA berlaku s.d.', t: 'tanggal'},
-      {k: 'catatan', label: 'Catatan', t: 'catatan'},
-    ],
-    kolom: [['nama', 'Nama'], ['jabatan', 'Jabatan'], ['status', 'Status'], ['kontrak_berakhir', 'Kontrak berakhir', 'tanggal'], ['sisa_hari', 'Sisa hari', 'angka'], ['alert_kontrak', 'Peringatan kontrak', 'pill'], ['masa_kerja', 'Masa kerja (thn)', 'desimal'], ['gaji', 'Gaji pokok', 'uang'], ['tunjangan', 'Tunjangan', 'uang'], ['bpjs_tk', 'BPJS TK', 'pill'], ['skk_berlaku', 'SKK/STRA s.d.', 'tanggal'], ['alert_sertifikat', 'Peringatan sertifikat', 'pill']],
+    bantuan: 'Data kepegawaian dan kontrak kerja. Peringatan diatur di Pengaturan.',
+    isian: [], kolom: [],
   },
   aset: {
     label: 'Aset', satuan: 'aset', grup: 'Administrasi', akses: 'admin', urut: 'kode_aset',

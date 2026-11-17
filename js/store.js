@@ -6,8 +6,29 @@ import {NAMA_TABEL} from './schema.js';
 
 const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 const KUNCI_LOKAL = 'alinea5:records';
-const idBaru = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
+export const idBaru = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
 const cek = ({data, error}) => { if (error) throw new Error(error.message); return data; };
+
+// File PDF (kontrak kerja, sertifikat). Mode demo menyimpannya di IndexedDB browser ini.
+const BUCKET = 'dokumen-sdm';
+function bukaIdb() {
+  return new Promise((ok, gagal) => {
+    const r = indexedDB.open('alinea5-berkas', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('berkas');
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => gagal(r.error);
+  });
+}
+async function idb(mode, fn) {
+  const db = await bukaIdb();
+  return new Promise((ok, gagal) => {
+    const tx = db.transaction('berkas', mode);
+    const req = fn(tx.objectStore('berkas'));
+    tx.oncomplete = () => ok(req?.result);
+    tx.onerror = () => gagal(tx.error);
+  });
+}
+const galatBerkas = (e) => new Error(/bucket not found/i.test(e.message) ? 'Tempat penyimpanan file belum dibuat. Jalankan SQL pembaruan terbaru di Supabase, lalu coba lagi.' : 'File gagal diproses: ' + e.message);
 
 function storeLokal() {
   let records = [];
@@ -32,6 +53,13 @@ function storeLokal() {
       tulis();
     },
     async tambahBanyak(rows) { return this.gantiTabel([], rows); },
+    async unggah(path, file) { await idb('readwrite', (st) => st.put(file, path)); },
+    async urlBerkas(path) {
+      const b = await idb('readonly', (st) => st.get(path));
+      if (!b) throw new Error('File tidak ditemukan di browser ini.');
+      return URL.createObjectURL(b);
+    },
+    async hapusBerkas(paths) { if (paths.length) await idb('readwrite', (st) => { paths.forEach((x) => st.delete(x)); }); },
   };
 }
 
@@ -81,6 +109,16 @@ function storeSupabase() {
       }
     },
     async tambahBanyak(rows) { return this.gantiTabel([], rows); },
+    async unggah(path, file) {
+      const {error} = await sb.storage.from(BUCKET).upload(path, file, {contentType: 'application/pdf', upsert: false});
+      if (error) throw galatBerkas(error);
+    },
+    async urlBerkas(path) {
+      const {data, error} = await sb.storage.from(BUCKET).createSignedUrl(path, 300);
+      if (error) throw galatBerkas(error);
+      return data.signedUrl;
+    },
+    async hapusBerkas(paths) { if (paths.length) await sb.storage.from(BUCKET).remove(paths); },
     async pengguna() { return cek(await sb.from('profiles').select('id,email,role,aktif,created_at').order('email')); },
     async aturPengguna(id, perubahan) { cek(await sb.from('profiles').update(perubahan).eq('id', id)); },
   };

@@ -3,15 +3,19 @@ import {ringkasan, temuan, hariIni, n} from './calc.js';
 import {store} from './store.js';
 import {bacaExcel} from './import-excel.js';
 import {S, muatData, bersih} from './state.js';
-import {h, idn, rp, rpRingkas, persen, tgl, kosong, isi, pill, batangProgres, FORMAT, RATA_KANAN, pesan, aman, sekali, dialog} from './ui.js';
+import {h, idn, rp, rpRingkas, persen, tgl, kosong, isi, pill, batangProgres, FORMAT, RATA_KANAN, pesan, aman, sekali, dialog, formatUang, buangTeksPalsu} from './ui.js';
 import {renderKlien, pilihKlien} from './klien.js';
 import {kotakCek, cekSemua, periksaIsian} from './cek.js';
+import {renderSdm, renderDetailPegawai} from './sdm.js';
+import {editorTimProyek, pilihAnggota, namaTimInternal} from './tim-proyek.js';
+import {aturSdm, PARAM_BAWAAN} from './sdm-util.js';
 
 const akar = document.getElementById('app');
 
 // ---------- rute ----------
 const rute = () => (location.hash.replace(/^#/, '') || 'dashboard');
 const tabelBoleh = () => NAMA_TABEL.filter((t) => bolehAkses(t, S.user.role));
+const tabelMenu = () => tabelBoleh().filter((t) => !TABEL[t].tersembunyi);
 
 function render() {
   if (!S.user) return renderMasuk();
@@ -19,15 +23,16 @@ function render() {
   const r = rute();
   const nav = h('nav', {class: 'nav', id: 'nav', 'aria-label': 'Menu utama'}, tautanNav('dashboard', 'Dashboard', r));
   const grup = {};
-  for (const t of tabelBoleh()) (grup[TABEL[t].grup] ||= []).push(t);
+  for (const t of tabelMenu()) (grup[TABEL[t].grup] ||= []).push(t);
   for (const [nama, daftar] of Object.entries(grup)) {
-    nav.append(h('div', {class: 'nav-grup'}, nama), ...daftar.map((t) => tautanNav('t-' + t, TABEL[t].label, r, S.db[t].length)));
+    nav.append(h('div', {class: 'nav-grup'}, nama), ...daftar.map((t) => tautanNav('t-' + t, TABEL[t].label, r.startsWith('sdm-') ? 't-sdm' : r, S.db[t].length)));
   }
   nav.append(h('div', {class: 'nav-grup'}, 'Lainnya'), tautanNav('pengaturan', 'Pengaturan', r));
 
   const utama = h('main', {class: 'utama', id: 'utama'});
   const tabel = r.startsWith('t-') ? r.slice(2) : null;
-  if (tabel && TABEL[tabel] && bolehAkses(tabel, S.user.role)) (tabel === 'klien' ? renderKlien : renderTabel)(utama, tabel);
+  if (tabel && TABEL[tabel] && !TABEL[tabel].tersembunyi && bolehAkses(tabel, S.user.role)) ({klien: renderKlien, sdm: renderSdm}[tabel] || renderTabel)(utama, tabel);
+  else if (r.startsWith('sdm-') && bolehAkses('sdm', S.user.role)) renderDetailPegawai(utama, r.slice(4));
   else if (r === 'pengaturan') renderPengaturan(utama);
   else renderDashboard(utama);
 
@@ -41,6 +46,7 @@ function render() {
     store.mode === 'lokal' && h('div', {class: 'pita'}, 'Mode demo: data hanya tersimpan di browser ini dan tidak terlihat oleh orang lain. Sambungkan Supabase di js/config.js untuk data bersama.'),
     h('div', {class: 'badan'}, nav, utama)].filter(Boolean));
   document.body.classList.remove('nav-buka');
+  buangTeksPalsu(akar);
 }
 S.render = render;
 const tautanNav = (ke, label, aktif, jumlah) => h('a', {href: '#' + ke, class: 'nav-item' + (aktif === ke ? ' aktif' : ''), 'aria-current': aktif === ke ? 'page' : null}, h('span', null, label), jumlah != null && h('span', {class: 'nav-jml'}, String(jumlah)));
@@ -106,6 +112,9 @@ function renderDashboard(el) {
     ubin('Sudah diterima', rpRingkas(r.diterima), persen(r.pct_diterima) + ' dari nilai kontrak'),
     ubin('Piutang', rpRingkas(r.piutang), 'sudah ditagih, belum dibayar'),
     ubin('Belum ditagih', rpRingkas(r.belum_ditagih), 'sisa nilai kontrak'));
+  if (admin && S.db.sdm.length) ub.push(h('a', {class: 'ubin ubin-tautan', href: '#t-sdm', onclick: () => { S.saringSdm = {aktif: 'Aktif', status: '', peringatan: r.sdm_peringatan > 0}; }},
+    h('span', {class: 'ubin-label'}, 'Peringatan SDM'), h('span', {class: 'ubin-nilai'}, String(r.sdm_peringatan)),
+    h('span', {class: 'ubin-kaki'}, r.sdm_peringatan ? r.sdm_pegawai_peringatan + ' pegawai · kontrak, SKK/STRA, magang' : 'tidak ada yang perlu ditindaklanjuti')));
   ub.push(
     ubin('Proyek berjalan', String(r.proyek_berjalan), r.proyek_terlambat + ' terlambat, dari ' + r.proyek_total + ' proyek tercatat'),
     ubin('Masalah terbuka', String(r.masalah_terbuka), r.masalah_tinggi + ' berdampak tinggi, ' + r.masalah_lewat + ' lewat target'));
@@ -210,18 +219,16 @@ const pilihan = (id, daftar, nilai, wajib) => {
   const semua = kosong(nilai) || daftar.some((o) => o[0] === nilai) ? daftar : daftar.concat([[nilai, nilai + ' (tidak ada di daftar)']]);
   return h('select', {id, required: wajib}, h('option', {value: ''}, wajib ? 'Pilih…' : '—'), semua.map(([v, label]) => h('option', {value: v, selected: v === nilai}, label)));
 };
-const formatUang = (teks) => {
-  const minus = /^\s*-/.test(teks), angka = teks.replace(/\D/g, '');
-  return angka ? (minus ? '-' : '') + idn(angka) : '';
-};
 
-function buatMasukan(f, nilai, tabel) {
+function buatMasukan(f, nilai, tabel, ctx = {}) {
   const id = 'f-' + f.k;
+  if (f.t === 'timproyek') return (ctx.editor = editorTimProyek(id, nilai, ctx.baris?.tim_pendukung));
+  if (f.t === 'anggota') return pilihAnggota(id, nilai, f.wajib, ctx.editor);
   if (f.t === 'catatan') return h('textarea', {id, rows: '2', required: f.wajib}, nilai ?? '');
   if (f.t === 'pilih' || f.t === 'yt') return pilihan(id, OPSI[f.t === 'yt' ? 'yt' : f.opsi].map((o) => [o, o]), nilai, f.wajib);
   if (f.t === 'proyek') return pilihan(id, urutkan(S.db.proyek, 'kode').map((p) => [p.kode, p.kode + ' — ' + isi(p.nama)]), nilai, f.wajib);
   if (f.t === 'klien') return pilihKlien(id, nilai, S.user.role === 'admin', f.wajib);
-  if (f.t === 'tim') return pilihan(id, nilaiUnik('tim', 'nama').map((x) => [x, x]), nilai, f.wajib);
+  if (f.t === 'tim') return pilihan(id, namaTimInternal().map((x) => [x, x]), nilai, f.wajib);
   if (f.t === 'tanggal') return h('input', {id, type: 'date', value: nilai ?? '', required: f.wajib});
   if (['hp', 'email', 'npwp'].includes(f.t)) return kotakCek(h('input', {id, type: 'text', value: nilai ?? '', required: f.wajib, autocomplete: 'off'}), f.t, f.bantuan);
   if (f.t === 'angka') return h('input', {id, type: 'number', step: 'any', value: nilai ?? '', required: f.wajib});
@@ -235,6 +242,7 @@ function buatMasukan(f, nilai, tabel) {
     saran && h('datalist', {id: id + '-saran'}, saran.map((s) => h('option', {value: s})))];
 }
 function bacaMasukan(f, form) {
+  if (f.t === 'timproyek') { const tim = form.querySelector('#f-' + f.k).nilaiTim(); return tim.length ? tim : null; }
   const v = form.querySelector('#f-' + f.k).value.trim();
   if (v === '') return null;
   if (['hp', 'email', 'npwp'].includes(f.t)) return periksaIsian(f.t, v).nilai ?? null;
@@ -254,15 +262,19 @@ function bukaForm(tabel, baris) {
     await muatData(); dlg.close(); render(); pesan(def.label + ': baris dihapus.');
   })}, 'Hapus');
   const simpan = h('button', {class: 'btn btn-utama', type: 'submit'}, 'Simpan');
+  const ctx = {baris};
   const form = h('form', {class: 'form', onsubmit: async (ev) => {
     ev.preventDefault();
     galat.textContent = '';
     const salah = cekSemua(form);
     if (salah) { galat.textContent = 'Perbaiki dulu isian yang bertanda ✕.'; salah.focus(); return; }
-    const data = {};
+    const galatTim = ctx.editor?.periksa();
+    if (galatTim) { galat.textContent = galatTim; return; }
+    // Kolom yang tidak ada di formulir (misalnya data lama hasil impor) tetap disimpan.
+    const data = bersih(baris || {});
     for (const f of def.isian) {
       const v = bacaMasukan(f, form);
-      if (v != null) data[f.k] = v;
+      if (v != null) data[f.k] = v; else delete data[f.k];
       if (f.t === 'klien' && f.wajib && v == null) {
         galat.textContent = 'Klien wajib dipilih dari daftar' + (S.user.role === 'admin' ? '. Jika belum ada, pakai "+ Tambah klien baru".' : '. Jika belum ada, minta admin menambahkannya di menu Klien.');
         form.querySelector('#f-klien_id-cari')?.focus();
@@ -279,9 +291,9 @@ function bukaForm(tabel, baris) {
       await muatData(); dlg.close(); render(); pesan(def.label + ': tersimpan.');
     } catch (e) { galat.textContent = e.message; simpan.disabled = false; simpan.textContent = 'Simpan'; }
   }},
-    h('div', {class: 'form-grid'}, def.isian.map((f) => h('div', {class: 'medan' + (f.t === 'catatan' ? ' medan-lebar' : '')},
-      h('label', {for: 'f-' + f.k}, f.label, f.wajib && h('span', {class: 'wajib', title: 'Wajib diisi'}, ' *')),
-      buatMasukan(f, f.t === 'klien' ? S.d[tabel].find((x) => x.id === baris?.id)?.klien_ref : baris?.[f.k], tabel),
+    h('div', {class: 'form-grid'}, def.isian.map((f) => h('div', {class: 'medan' + (['catatan', 'timproyek'].includes(f.t) ? ' medan-lebar' : '')},
+      h('label', {for: f.t === 'timproyek' ? 'f-tim-orang' : 'f-' + f.k}, f.label, f.wajib && h('span', {class: 'wajib', title: 'Wajib diisi'}, ' *')),
+      buatMasukan(f, f.t === 'klien' ? S.d[tabel].find((x) => x.id === baris?.id)?.klien_ref : baris?.[f.k], tabel, ctx),
       f.bantuan && !['hp', 'email', 'npwp'].includes(f.t) && h('span', {class: 'kecil redup'}, f.bantuan)))),
     galat,
     h('div', {class: 'form-kaki'}, hapus, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, 'Batal'), simpan));
@@ -379,6 +391,8 @@ function renderPengaturan(el) {
     }}, 'Unduh cadangan (.json)')),
     h('label', {for: 'pulih-json', class: 'kecil redup'}, 'Pulihkan dari file cadangan'), pulih, hasilPulih));
 
+  if (admin) el.append(bagianJabatan(), bagianParamSdm());
+
   // Pilihan dropdown
   if (admin) {
     const kotak = {};
@@ -403,12 +417,8 @@ function renderPengaturan(el) {
           if (k === 'sumberKlien' && daftar.some((x) => x.includes(','))) { galat.textContent = label + ': pilihan tidak boleh memuat koma (dipakai sebagai dropdown di file Excel).'; return; }
           opsi[k] = daftar;
         }
-        try {
-          await store.simpan('pengaturan', S.pengaturan?.id, {...S.pengaturan?.data, opsi});
-        } catch (e) {
-          throw new Error('Pengaturan belum bisa disimpan ke database. Jalankan SQL pembaruan terbaru di Supabase, lalu coba lagi. (' + e.message + ')');
-        }
-        await muatData(); render(); pesan('Pilihan dropdown tersimpan.');
+        await simpanPengaturan('opsi', opsi);
+        pesan('Pilihan dropdown tersimpan.');
       })}, 'Simpan pilihan'))));
   }
 
@@ -442,6 +452,101 @@ function renderPengaturan(el) {
         await muatData(); render(); pesan('Semua data dihapus.');
       })}, 'Hapus semua data'))));
   }
+}
+
+// Menyimpan satu bagian pengaturan tanpa menyentuh bagian lain.
+async function simpanPengaturan(bagian, isiBaru) {
+  try {
+    await store.simpan('pengaturan', S.pengaturan?.id, {...S.pengaturan?.data, [bagian]: isiBaru});
+  } catch (e) {
+    throw new Error('Pengaturan belum bisa disimpan ke database. Jalankan SQL pembaruan terbaru di Supabase, lalu coba lagi. (' + e.message + ')');
+  }
+  await muatData(); render();
+}
+
+// Daftar jabatan SDM: tambah, ubah nama, tandai perlu SKK/STRA, nonaktifkan. Yang dipakai tidak bisa dihapus.
+function bagianJabatan() {
+  const {jabatan} = aturSdm(S.pengaturan?.data);
+  const dipakai = (jid) => S.d.sdm.filter((s) => s.jabatan_id === jid).length;
+  const badan = h('tbody');
+  const galat = h('p', {class: 'form-galat', role: 'alert'});
+  const baris = [];
+  let nomor = 0;
+  const tambah = (j) => {
+    const i = ++nomor, pakai = j.id ? dipakai(j.id) : 0;
+    const nama = h('input', {type: 'text', id: 'jab-nama-' + i, value: j.nama || '', autocomplete: 'off', 'aria-label': 'Nama jabatan'});
+    const skk = h('input', {type: 'checkbox', checked: !!j.skk, 'aria-label': 'Memerlukan SKK/STRA'});
+    const aktif = h('input', {type: 'checkbox', checked: j.aktif !== false, 'aria-label': 'Aktif'});
+    const item = {id: j.id, nama, skk, aktif};
+    const tr = h('tr', null, h('td', null, nama), h('td', {class: 'tengah-teks'}, skk), h('td', {class: 'tengah-teks'}, aktif),
+      h('td', {class: 'kanan'}, pakai ? idn(pakai) + ' pegawai' : '—'),
+      h('td', null, pakai ? h('span', {class: 'kecil redup'}, 'Dipakai; nonaktifkan saja') : h('button', {class: 'btn btn-kecil', type: 'button', onclick: () => { baris.splice(baris.indexOf(item), 1); tr.remove(); }}, 'Hapus')));
+    baris.push(item);
+    badan.append(tr);
+    return nama;
+  };
+  jabatan.forEach(tambah);
+  return h('section', {class: 'kartu'}, h('h2', null, 'Jabatan (SDM)'),
+    h('p', null, 'Daftar jabatan untuk formulir pegawai. Centang "Memerlukan SKK/STRA" agar isian nomor, masa berlaku, dan file sertifikat muncul untuk jabatan itu. Jabatan yang sudah dipakai tidak bisa dihapus, hanya dinonaktifkan (tidak muncul lagi sebagai pilihan).'),
+    h('div', {class: 'gulir'}, h('table', {class: 'tabel tabel-isian'},
+      h('thead', null, h('tr', null, h('th', null, 'Nama jabatan'), h('th', null, 'Memerlukan SKK/STRA'), h('th', null, 'Aktif'), h('th', {class: 'kanan'}, 'Dipakai'), h('th', null, ''))), badan)),
+    galat,
+    h('div', {class: 'baris-tombol'},
+      h('button', {class: 'btn', type: 'button', onclick: () => tambah({skk: false, aktif: true}).focus()}, '+ Tambah jabatan'),
+      h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => {
+        galat.textContent = '';
+        const hasil = [], nama = new Set();
+        for (const b of baris) {
+          const n = b.nama.value.replace(/\s+/g, ' ').trim();
+          if (!n) { galat.textContent = 'Nama jabatan tidak boleh kosong.'; b.nama.focus(); return; }
+          if (nama.has(n.toLowerCase())) { galat.textContent = 'Jabatan "' + n + '" tertulis dua kali.'; b.nama.focus(); return; }
+          nama.add(n.toLowerCase());
+          hasil.push({id: b.id || 'j-' + idBaruPendek(), nama: n, skk: b.skk.checked, aktif: b.aktif.checked});
+        }
+        if (!hasil.some((j) => j.aktif)) { galat.textContent = 'Minimal satu jabatan aktif.'; return; }
+        await simpanPengaturan('jabatan', hasil);
+        pesan('Daftar jabatan tersimpan.');
+      })}, 'Simpan jabatan')));
+}
+const idBaruPendek = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+// Parameter peringatan SDM. Batas PKWT boleh dikosongkan: pengecekannya tidak dijalankan.
+function bagianParamSdm() {
+  const {param} = aturSdm(S.pengaturan?.data);
+  const galat = h('p', {class: 'form-galat', role: 'alert'});
+  const BARIS = [
+    ['hari_kontrak', 'Peringatan kontrak PKWT akan habis', 'hari', true, 'Sebelum kontrak berakhir.'],
+    ['hari_skk', 'Peringatan SKK/STRA akan habis', 'hari', true, 'Sebelum tanggal berlaku s.d.'],
+    ['hari_magang', 'Peringatan magang akan berakhir', 'hari', true, 'Sebelum periode magang selesai.'],
+    ['pkwt_awal_bln', 'Durasi maksimal kontrak awal', 'bulan', false, 'Kosongkan bila tidak dibatasi.'],
+    ['pkwt_maks_perpanjangan', 'Jumlah maksimal perpanjangan', 'kali', false, 'Kosongkan bila tidak dibatasi.'],
+    ['pkwt_perpanjangan_bln', 'Durasi maksimal per perpanjangan', 'bulan', false, 'Kosongkan bila tidak dibatasi.'],
+  ];
+  const kotak = {};
+  const medan = ([k, label, satuan, wajib, bantuan]) => {
+    const inp = h('input', {id: 'param-' + k, type: 'number', min: '0', step: '1', value: param[k] ?? '', placeholder: wajib ? String(PARAM_BAWAAN[k]) : 'tidak dibatasi'});
+    kotak[k] = inp;
+    return h('div', {class: 'medan'}, h('label', {for: 'param-' + k}, label, wajib && h('span', {class: 'wajib', title: 'Wajib diisi'}, ' *')), h('div', {class: 'berakhiran'}, inp, h('span', null, satuan)), h('span', {class: 'kecil redup'}, bantuan));
+  };
+  return h('section', {class: 'kartu'}, h('h2', null, 'Peringatan SDM'),
+    h('p', null, 'Kapan peringatan muncul di tabel SDM dan Dashboard.'),
+    h('h3', null, 'Batas waktu peringatan'), h('div', {class: 'form-grid'}, BARIS.slice(0, 3).map(medan)),
+    h('h3', null, 'Batas kontrak PKWT (opsional)'),
+    h('p', {class: 'kecil redup'}, 'Bila diisi, aplikasi memberi peringatan saat kontrak yang diinput melebihi batas ini atau jatah perpanjangan sudah habis.'),
+    h('div', {class: 'form-grid'}, BARIS.slice(3).map(medan)),
+    galat,
+    h('div', {class: 'baris-tombol'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => {
+      galat.textContent = '';
+      const hasil = {};
+      for (const [k, label, , wajib] of BARIS) {
+        const v = kotak[k].value.trim();
+        if (v === '' && wajib) { galat.textContent = label + ' wajib diisi.'; kotak[k].focus(); return; }
+        if (v !== '' && (!/^\d+$/.test(v))) { galat.textContent = label + ': isi dengan angka bulat 0 atau lebih.'; kotak[k].focus(); return; }
+        hasil[k] = v === '' ? null : +v;
+      }
+      await simpanPengaturan('sdm', hasil);
+      pesan('Pengaturan peringatan SDM tersimpan.');
+    })}, 'Simpan pengaturan peringatan')));
 }
 
 // ---------- mulai ----------
