@@ -1,4 +1,4 @@
-import {TABEL, OPSI, TAHAP, NAMA_TABEL, bolehAkses} from './schema.js';
+import {TABEL, OPSI, TAHAP, NAMA_TABEL, bolehAkses, OPSI_BISA_DIATUR, opsiBawaan, opsiSekarang} from './schema.js';
 import {ringkasan, temuan, hariIni, n} from './calc.js';
 import {store} from './store.js';
 import {bacaExcel} from './import-excel.js';
@@ -378,6 +378,39 @@ function renderPengaturan(el) {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }}, 'Unduh cadangan (.json)')),
     h('label', {for: 'pulih-json', class: 'kecil redup'}, 'Pulihkan dari file cadangan'), pulih, hasilPulih));
+
+  // Pilihan dropdown
+  if (admin) {
+    const kotak = {};
+    const galat = h('p', {class: 'form-galat', role: 'alert'});
+    el.append(h('section', {class: 'kartu'}, h('h2', null, 'Pilihan dropdown'),
+      h('p', null, 'Atur isi daftar pilihan di formulir. Tulis satu pilihan per baris; urutannya menjadi urutan di dropdown.'),
+      h('p', {class: 'kecil redup'}, 'Mengganti nama pilihan tidak mengubah data yang sudah tersimpan: baris lama tetap menyimpan nama lama. Pada Sumber klien, "Referensi" dan "Lainnya" memunculkan kotak isian tambahan selama namanya tidak diubah. Daftar yang dipakai rumus (status proyek, status masalah, dampak, bentuk dokumen, sumber dana, kondisi aset, tahap, jenis klien) tidak bisa diubah.'),
+      Object.entries(OPSI_BISA_DIATUR).map(([k, label]) => {
+        const ta = h('textarea', {id: 'opsi-' + k, rows: '7'}, opsiSekarang(k).join('\n'));
+        kotak[k] = ta;
+        return h('details', {class: 'opsi'}, h('summary', null, label, h('span', {class: 'redup kecil'}, ' · ' + opsiSekarang(k).length + ' pilihan')),
+          h('label', {for: 'opsi-' + k, class: 'kecil redup'}, 'Satu pilihan per baris'), ta,
+          h('div', null, h('button', {class: 'btn btn-kecil', type: 'button', onclick: () => { ta.value = opsiBawaan(k).join('\n'); }}, 'Isi dengan pilihan bawaan')));
+      }),
+      galat,
+      h('div', {class: 'baris-tombol'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => {
+        galat.textContent = '';
+        const opsi = {};
+        for (const [k, label] of Object.entries(OPSI_BISA_DIATUR)) {
+          const daftar = [...new Set(kotak[k].value.split('\n').map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean))];
+          if (!daftar.length) { galat.textContent = label + ': minimal satu pilihan.'; return; }
+          if (k === 'sumberKlien' && daftar.some((x) => x.includes(','))) { galat.textContent = label + ': pilihan tidak boleh memuat koma (dipakai sebagai dropdown di file Excel).'; return; }
+          opsi[k] = daftar;
+        }
+        try {
+          await store.simpan('pengaturan', S.pengaturan?.id, {...S.pengaturan?.data, opsi});
+        } catch (e) {
+          throw new Error('Pengaturan belum bisa disimpan ke database. Jalankan SQL pembaruan terbaru di Supabase, lalu coba lagi. (' + e.message + ')');
+        }
+        await muatData(); render(); pesan('Pilihan dropdown tersimpan.');
+      })}, 'Simpan pilihan'))));
+  }
 
   // Pengguna
   if (store.mode === 'supabase' && admin) {

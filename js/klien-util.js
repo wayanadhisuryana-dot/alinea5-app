@@ -2,7 +2,11 @@
 // dipakai bersama oleh formulir, impor Excel, dan perhitungan.
 
 export const JENIS_KLIEN = ['Perorangan', 'Badan usaha (PT/CV/dll)'];
+// Daftar ini bisa diubah admin dari Pengaturan; isinya diganti di tempat agar semua pemakai ikut berubah.
+// "Referensi" dan "Lainnya" memunculkan kotak isian tambahan di formulir bila masih ada di daftar.
 export const SUMBER_KLIEN = ['Referensi', 'Instagram', 'Website', 'Pameran / event', 'Lainnya'];
+export const SUMBER_BAWAAN = SUMBER_KLIEN.slice();
+export const aturSumberKlien = (daftar) => { SUMBER_KLIEN.splice(0, SUMBER_KLIEN.length, ...daftar); };
 
 const BADAN = ['pt', 'cv', 'ud', 'tbk'];
 const rapi = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();

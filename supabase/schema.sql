@@ -45,12 +45,18 @@ create table if not exists public.records (
   id uuid primary key default gen_random_uuid(),
   tabel text not null check (tabel in (
     'proyek', 'tahap', 'masalah', 'klien', 'tim',
-    'kontrak', 'termin', 'vendor', 'hutang_lain', 'sdm', 'aset', 'legal')),
+    'kontrak', 'termin', 'vendor', 'hutang_lain', 'sdm', 'aset', 'legal', 'pengaturan')),
   data jsonb not null default '{}'::jsonb,
   updated_at timestamptz not null default now(),
   updated_by uuid default auth.uid()
 );
 create index if not exists records_tabel_idx on public.records (tabel);
+
+-- Database yang dibuat sebelum ada tabel 'pengaturan': perbarui daftar nama tabel yang diizinkan.
+alter table public.records drop constraint if exists records_tabel_check;
+alter table public.records add constraint records_tabel_check check (tabel in (
+  'proyek', 'tahap', 'masalah', 'klien', 'tim',
+  'kontrak', 'termin', 'vendor', 'hutang_lain', 'sdm', 'aset', 'legal', 'pengaturan'));
 
 create or replace function public.catat_perubahan()
 returns trigger language plpgsql set search_path = ''
@@ -96,6 +102,11 @@ create policy records_arsitek on public.records for all to authenticated
 drop policy if exists records_arsitek_baca_klien on public.records;
 create policy records_arsitek_baca_klien on public.records for select to authenticated
   using (public.peran() = 'arsitek' and tabel = 'klien');
+
+-- Pengaturan aplikasi (pilihan dropdown): diubah admin, dibaca semua pengguna aktif.
+drop policy if exists records_baca_pengaturan on public.records;
+create policy records_baca_pengaturan on public.records for select to authenticated
+  using (public.peran() is not null and tabel = 'pengaturan');
 
 -- Tamu yang belum login tidak mendapat akses apa pun.
 revoke all on public.profiles, public.records from anon;

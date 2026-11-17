@@ -1,6 +1,8 @@
 // Definisi tabel, kolom isian, dan daftar pilihan. Menambah kolom cukup di sini;
 // database menyimpan tiap baris sebagai JSON sehingga tidak perlu migrasi.
 
+import {SUMBER_KLIEN, SUMBER_BAWAAN, aturSumberKlien} from './klien-util.js';
+
 export const TAHAP = [
   {nama: '1. Konsep Rancangan', bobot: 0.1},
   {nama: '2. Pra Rancangan', bobot: 0.2},
@@ -35,6 +37,34 @@ export const OPSI = {
   kategoriAset: ['Komputer / laptop', 'Software / lisensi', 'Kendaraan', 'Printer / plotter', 'Peralatan lapangan', 'Furnitur kantor', 'Lainnya'],
   kondisi: ['Baik', 'Perlu servis', 'Rusak', 'Hilang'],
 };
+
+// Pilihan yang boleh diubah admin dari menu Pengaturan. Daftar lain (status proyek, status masalah,
+// dampak, bentuk dokumen, sumber dana, kondisi, tahap, jenis klien) dipakai oleh rumus sehingga tetap.
+export const OPSI_BISA_DIATUR = {
+  sumberKlien: 'Sumber klien (Klien)',
+  lokasi: 'Lokasi kab/kota (Proyek)',
+  jenisBangunan: 'Jenis bangunan (Proyek)',
+  layanan: 'Jenis layanan (Proyek)',
+  kategoriMasalah: 'Kategori masalah (Masalah & Risiko)',
+  jenisPerjanjian: 'Jenis perjanjian (Kontrak)',
+  ppn: 'PPN (Kontrak)',
+  jenisVendor: 'Jenis vendor (Vendor & Tukang)',
+  perjanjianVendor: 'Jenis perjanjian vendor (Vendor & Tukang)',
+  jenisHutang: 'Jenis hutang (Hutang Lain)',
+  statusPegawai: 'Status pegawai (SDM)',
+  jabatan: 'Jabatan (SDM)',
+  kategoriAset: 'Kategori aset (Aset)',
+};
+const BAWAAN = Object.fromEntries(Object.entries(OPSI).map(([k, v]) => [k, v.slice()]));
+export const opsiBawaan = (k) => (k === 'sumberKlien' ? SUMBER_BAWAAN : BAWAAN[k]).slice();
+export const opsiSekarang = (k) => (k === 'sumberKlien' ? SUMBER_KLIEN : OPSI[k]).slice();
+// Memasang pilihan hasil pengaturan admin; kunci yang tidak diatur kembali ke bawaan.
+export function terapkanOpsi(atur = {}) {
+  for (const k of Object.keys(OPSI_BISA_DIATUR)) {
+    const daftar = Array.isArray(atur?.[k]) && atur[k].length ? atur[k].map(String) : opsiBawaan(k);
+    if (k === 'sumberKlien') aturSumberKlien(daftar); else OPSI[k] = daftar;
+  }
+}
 
 // Jenis isian (t): teks, catatan, angka, uang, persen, tanggal, pilih, yt,
 // hp, email, npwp (ketiganya dicek langsung saat mengetik dan disimpan dalam bentuk seragam),

@@ -169,3 +169,9 @@ textarea { resize: vertical; }
 .cek[data-status=benar] .cek-tanda, .cek[data-status=benar] .cek-ket { color: var(--baik); }
 .cek[data-status=salah] input { border-color: var(--buruk); }
 .cek[data-status=salah] .cek-tanda, .cek[data-status=salah] .cek-ket { color: var(--buruk); }
+
+/* Pengaturan: pilihan dropdown */
+.opsi { border: 1px solid var(--garis); border-radius: 6px; padding: 8px 12px; }
+.opsi summary { cursor: pointer; font-weight: 600; }
+.opsi[open] { display: flex; flex-direction: column; gap: 6px; }
+.opsi[open] summary { margin-bottom: 4px; }
