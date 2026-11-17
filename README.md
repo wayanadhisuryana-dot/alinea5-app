@@ -36,15 +36,10 @@ kontrak kerja (60 hari), sertifikat dan dokumen legal (90 hari), lisensi aset (6
    Kunci anon memang boleh terbuka; data dilindungi login dan Row Level Security.
    **Jangan pernah** menaruh kunci `service_role` / `secret` di repo ini.
 4. Simpan (commit) perubahan `js/config.js` dan unggah (push) ke GitHub.
-5. Buka aplikasinya, klik **Daftar akun baru** dengan email Anda.
-6. Kembali ke SQL Editor dan jadikan diri Anda admin pertama:
-
-   ```sql
-   update public.profiles set role = 'admin', aktif = true where email = 'email-anda@contoh.com';
-   ```
-
-7. Anggota tim lain mendaftar sendiri dari halaman masuk. Aktifkan dan atur perannya di **Pengaturan > Pengguna**.
-   Akun yang belum diaktifkan tidak bisa membaca data apa pun.
+5. Buka aplikasinya dan klik **Daftar akun baru** dengan email Anda, lalu klik tautan konfirmasi di email dari Supabase.
+   **Pendaftar pertama otomatis menjadi admin**, jadi daftarkan akun Anda segera setelah langkah 2.
+6. Anggota tim lain mendaftar sendiri dari halaman masuk. Admin mengaktifkan dan mengatur perannya di
+   **Pengaturan > Pengguna**. Akun yang belum diaktifkan tidak bisa membaca data apa pun.
 
 Saran: di **Authentication > URL Configuration**, isi *Site URL* dengan alamat GitHub Pages aplikasi ini
 agar tautan konfirmasi email kembali ke aplikasi.

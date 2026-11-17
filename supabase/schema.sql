@@ -11,13 +11,19 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 
--- Setiap akun baru otomatis mendapat profil: peran arsitek, BELUM aktif.
--- Akun baru tidak bisa membaca data apa pun sampai admin mengaktifkannya.
+-- Setiap akun baru otomatis mendapat profil.
+-- Pendaftar PERTAMA langsung menjadi admin dan aktif. Pendaftar berikutnya menjadi
+-- arsitek yang BELUM aktif: tidak bisa membaca data apa pun sampai admin mengaktifkannya
+-- di menu Pengaturan > Pengguna.
 create or replace function public.buat_profil()
 returns trigger language plpgsql security definer set search_path = ''
 as $$
+declare
+  pertama boolean;
 begin
-  insert into public.profiles (id, email) values (new.id, new.email)
+  select not exists (select 1 from public.profiles) into pertama;
+  insert into public.profiles (id, email, role, aktif)
+  values (new.id, new.email, case when pertama then 'admin' else 'arsitek' end, pertama)
   on conflict (id) do nothing;
   return new;
 end $$;
@@ -93,7 +99,9 @@ grant execute on function public.peran() to authenticated;
 grant select, update on public.profiles to authenticated;
 grant select, insert, update, delete on public.records to authenticated;
 
--- 4. Menjadikan diri Anda admin pertama --------------------------------------
--- Setelah mendaftar lewat aplikasi, jalankan baris ini (ganti emailnya) di SQL Editor:
---
---   update public.profiles set role = 'admin', aktif = true where email = 'email-anda@contoh.com';
+-- 4. Admin pertama ----------------------------------------------------------
+-- Bila sudah ada yang mendaftar sebelum aturan di atas dipasang dan belum ada admin,
+-- pendaftar paling awal dijadikan admin.
+update public.profiles set role = 'admin', aktif = true
+where id = (select id from public.profiles order by created_at limit 1)
+  and not exists (select 1 from public.profiles where role = 'admin' and aktif);
