@@ -61,8 +61,31 @@ export const pesan = (teks, jenis = 'info') => {
   document.body.append(el);
   setTimeout(() => el.remove(), 4500);
 };
-export const aman = (fn) => async (...a) => {
-  try { await fn(...a); } catch (e) { console.error(e); pesan(e.message || String(e), 'galat'); }
+// Membungkus aksi tombol: galat ditampilkan sebagai pesan, dan selama aksi berjalan klik
+// berikutnya diabaikan serta tombolnya dimatikan (mencegah simpan ganda).
+export const aman = (fn) => {
+  let jalan = false;
+  return async (...a) => {
+    if (jalan) return;
+    jalan = true;
+    const t = a[0]?.currentTarget;
+    const tombol = typeof HTMLButtonElement !== 'undefined' && t instanceof HTMLButtonElement && !t.disabled ? t : null;
+    if (tombol) tombol.disabled = true;
+    try { await fn(...a); } catch (e) { console.error(e); pesan(e.message || String(e), 'galat'); } finally {
+      jalan = false;
+      if (tombol) tombol.disabled = false;
+    }
+  };
+};
+// Seperti aman() tetapi tanpa menangkap galat: untuk onsubmit formulir yang menampilkan galatnya sendiri.
+export const sekali = (fn) => {
+  let jalan = false;
+  return async (...a) => {
+    a[0]?.preventDefault?.();
+    if (jalan) return;
+    jalan = true;
+    try { await fn(...a); } finally { jalan = false; }
+  };
 };
 
 export function dialog(judul, isiDialog) {

@@ -4,7 +4,8 @@ import {store} from './store.js';
 import {S, bersih, segarkan} from './state.js';
 import {h, idn, rpRingkas, tgl, isi, pill, pesan, aman, dialog} from './ui.js';
 import {hariIni} from './calc.js';
-import {JENIS_KLIEN, SUMBER_KLIEN, normNpwp, validasiKlien, cariDuplikat, namaMirip, kontakDari, gabungKontak, isiYangKosong} from './klien-util.js';
+import {JENIS_KLIEN, SUMBER_KLIEN, validasiKlien, cariDuplikat, namaMirip, kontakDari, gabungKontak, isiYangKosong} from './klien-util.js';
+import {kotakCek, cekSemua} from './cek.js';
 import {buatWorkbook, bacaWorkbook, evaluasiImpor, klienKeBaris} from './klien-excel.js';
 
 const EXCELJS = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
@@ -95,7 +96,7 @@ let nomorKontak = 0;
 export function bukaFormKlien(id, opsi = {}) {
   const lama = id ? S.d.klien.find((k) => k.id === id) : null;
   let dlg, sibuk = false, lanjut = false;
-  const medan = (label, masukan, bantuan, kelas) => h('div', {class: 'medan ' + (kelas || '')}, h('label', {for: masukan.id}, label), masukan, bantuan);
+  const medan = (label, masukan, bantuan, kelas) => h('div', {class: 'medan ' + (kelas || '')}, h('label', {for: masukan.id || masukan.querySelector('input')?.id}, label), masukan, bantuan);
   const bukaLain = (k) => { dlg.close(); bukaFormKlien(k.id, opsi); };
   const daftarCocok = (klien) => h('ul', {class: 'cocok'}, klien.map((k) => h('li', null, h('span', null, ringkasKlien(k)), ' ', h('button', {class: 'tautan', type: 'button', onclick: () => bukaLain(k)}, 'Buka klien ini'))));
 
@@ -120,8 +121,8 @@ export function bukaFormKlien(id, opsi = {}) {
     const hapus = h('button', {class: 'btn btn-kecil', type: 'button', onclick: () => { kartu.remove(); terapkanJenis(); }});
     const kartu = h('fieldset', {class: 'kontak'}, judul,
       h('div', {class: 'form-grid'}, mNama, mJabatan,
-        medan('No. HP / WA', h('input', {id: 'kh-' + i, 'data-k': 'hp', type: 'text', inputmode: 'tel', value: c.hp ?? '', placeholder: '08xxxxxxxxxx', autocomplete: 'off'})),
-        medan('Email', h('input', {id: 'ke-' + i, 'data-k': 'email', type: 'text', inputmode: 'email', value: c.email ?? '', placeholder: 'nama@contoh.com', autocomplete: 'off'}))),
+        medan('No. HP / WA', kotakCek(h('input', {id: 'kh-' + i, 'data-k': 'hp', type: 'text', value: c.hp ?? '', autocomplete: 'off'}), 'hp')),
+        medan('Email', kotakCek(h('input', {id: 'ke-' + i, 'data-k': 'email', type: 'text', value: c.email ?? '', autocomplete: 'off'}), 'email'))),
       h('div', {class: 'baris-tombol'}, utama, h('span', {class: 'pegas'}), hapus));
     // Perorangan: kartu pertama adalah kontak klien sendiri (tanpa nama/jabatan); kartu lain = kontak
     // lain seperti istri atau suami. Badan usaha: tiap kartu adalah satu PIC.
@@ -140,13 +141,8 @@ export function bukaFormKlien(id, opsi = {}) {
   (kontakAwal.length ? kontakAwal : [{utama: true}]).forEach(tambahKontak);
 
   const alamat = h('textarea', {id: 'k-alamat', rows: '3'}, lama?.alamat ?? '');
-  const npwp = h('input', {id: 'k-npwp', type: 'text', inputmode: 'numeric', placeholder: '16 digit', autocomplete: 'off', value: lama?.npwp ?? ''});
-  const ketNpwp = h('span', {class: 'kecil redup'});
-  const cekNpwp = () => {
-    const r = normNpwp(npwp.value);
-    ketNpwp.textContent = (perorangan() ? 'Belum punya NPWP? Isi NIK. ' : '') + (r.galat ? r.galat + '.' : r.nilai ? (r.lama ? '15 digit (format lama).' : '16 digit.') : '');
-  };
-  npwp.addEventListener('input', cekNpwp); cekNpwp();
+  const npwp = h('input', {id: 'k-npwp', type: 'text', autocomplete: 'off', value: lama?.npwp ?? ''});
+  const kotakNpwp = kotakCek(npwp, 'npwp', () => (perorangan() ? 'Opsional. 15 atau 16 digit. Belum punya NPWP? Isi NIK.' : 'Opsional. 15 atau 16 digit.'));
   const sumber = h('select', {id: 'k-sumber'}, h('option', {value: ''}, '— Pilih sumber —'),
     SUMBER_KLIEN.concat(lama?.sumber && !SUMBER_KLIEN.includes(lama.sumber) ? [lama.sumber] : []).map((x) => h('option', {value: x, selected: lama?.sumber === x}, SUMBER_KLIEN.includes(x) ? x : x + ' (pilihan lama, ganti)')));
   const referensi = h('input', {id: 'k-referensi', type: 'text', value: lama?.referensi_oleh ?? '', autocomplete: 'off'});
@@ -174,6 +170,7 @@ export function bukaFormKlien(id, opsi = {}) {
     if (hasil.galat.length) {
       galat.replaceChildren(h('b', null, 'Perbaiki dulu:'), h('ul', null, hasil.galat.map((g) => h('li', null, g.kolom + ': ' + g.pesan))));
       galat.hidden = false; lanjut = false;
+      cekSemua(form)?.focus();
       return;
     }
     const dup = cariDuplikat(hasil.data, S.d.klien, id);
@@ -208,7 +205,7 @@ export function bukaFormKlien(id, opsi = {}) {
     wadahKontak,
     h('div', null, tombolTambah),
     h('div', {class: 'form-grid'},
-      medan('Alamat penagihan', alamat), h('div', {class: 'medan'}, labelNpwp, npwp, ketNpwp),
+      medan('Alamat penagihan', alamat), h('div', {class: 'medan'}, labelNpwp, kotakNpwp),
       medan('Sumber klien', sumber), medanReferensi, medanSumberLain,
       medan('Catatan', catatan, null, 'medan-lebar')),
     lama && h('p', {class: 'kecil redup'}, 'Dihitung otomatis: ' + lama.jml_proyek + ' proyek, ' + lama.jml_kontrak + ' kontrak, total ' + rpRingkas(lama.total_kontrak) + ', terakhir aktif ' + tgl(lama.terakhir_aktif) + ', status ' + lama.status_klien + '.'));
@@ -223,7 +220,7 @@ export function bukaFormKlien(id, opsi = {}) {
     kartu.forEach((k, i) => k.atur(i === 0));
     if (p || !wadahKontak.querySelector('[data-k=utama]:checked')) kartu[0].querySelector('[data-k=utama]').checked = true;
   }
-  jenis.addEventListener('change', () => { terapkanJenis(); cekNpwp(); });
+  jenis.addEventListener('change', () => { terapkanJenis(); kotakNpwp.periksa(); });
   // Mengubah isian setelah peringatan muncul membatalkan "Tetap simpan".
   const form = h('form', {class: 'form', novalidate: true, onsubmit: kirim, oninput: () => { lanjut = false; }},
     h('div', {class: 'form-grid'}, h('div', {class: 'medan'}, h('label', {for: 'k-jenis'}, 'Jenis klien', h('span', {class: 'wajib'}, ' *')), jenis, petunjukJenis)),

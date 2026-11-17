@@ -158,3 +158,14 @@ textarea { resize: vertical; }
 
 /* Atribut hidden harus menang atas display dari kelas. */
 [hidden] { display: none !important; }
+
+/* Kotak isian dengan pengecekan langsung (NPWP, No. HP, email). */
+.cek { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cek-isian { position: relative; }
+.cek-isian input { padding-right: 30px; }
+.cek-tanda { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-weight: 700; pointer-events: none; }
+.cek-ket { color: var(--redup); min-height: 1.2em; }
+.cek[data-status=benar] input { border-color: var(--baik); }
+.cek[data-status=benar] .cek-tanda, .cek[data-status=benar] .cek-ket { color: var(--baik); }
+.cek[data-status=salah] input { border-color: var(--buruk); }
+.cek[data-status=salah] .cek-tanda, .cek[data-status=salah] .cek-ket { color: var(--buruk); }

@@ -37,6 +37,7 @@ export const OPSI = {
 };
 
 // Jenis isian (t): teks, catatan, angka, uang, persen, tanggal, pilih, yt,
+// hp, email, npwp (ketiganya dicek langsung saat mengetik dan disimpan dalam bentuk seragam),
 // proyek (kode proyek), klien (id klien, dipilih dari daftar), tim (nama anggota tim).
 // akses: 'umum' = admin dan arsitek, 'admin' = hanya admin.
 // kolom: [kunci, judul, format] untuk daftar; kunci boleh hasil hitungan (lihat calc.js).

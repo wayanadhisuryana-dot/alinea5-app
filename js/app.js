@@ -3,8 +3,9 @@ import {ringkasan, temuan, hariIni, n} from './calc.js';
 import {store} from './store.js';
 import {bacaExcel} from './import-excel.js';
 import {S, muatData, bersih} from './state.js';
-import {h, idn, rp, rpRingkas, persen, tgl, kosong, isi, pill, batangProgres, FORMAT, RATA_KANAN, pesan, aman, dialog} from './ui.js';
+import {h, idn, rp, rpRingkas, persen, tgl, kosong, isi, pill, batangProgres, FORMAT, RATA_KANAN, pesan, aman, sekali, dialog} from './ui.js';
 import {renderKlien, pilihKlien} from './klien.js';
+import {kotakCek, cekSemua, periksaIsian} from './cek.js';
 
 const akar = document.getElementById('app');
 
@@ -49,8 +50,7 @@ function renderMasuk() {
   const galat = h('p', {class: 'form-galat', role: 'alert'});
   const email = h('input', {id: 'masuk-email', type: 'email', required: true, autocomplete: 'username'});
   const sandi = h('input', {id: 'masuk-sandi', type: 'password', required: true, minlength: '8', autocomplete: 'current-password'});
-  const jalankan = (aksi) => async (ev) => {
-    ev.preventDefault();
+  const jalankan = (aksi) => sekali(async () => {
     galat.textContent = '';
     if (!email.reportValidity() || !sandi.reportValidity()) return;
     try {
@@ -63,7 +63,7 @@ function renderMasuk() {
       if (S.user?.aktif) await muatData();
       render();
     } catch (e) { galat.textContent = e.message; }
-  };
+  });
   akar.replaceChildren(h('div', {class: 'tengah'}, h('form', {class: 'kartu kartu-masuk', onsubmit: jalankan('masuk')},
     h('h1', null, 'Alinea 5'),
     h('p', {class: 'redup'}, 'Masuk untuk membuka data back office dan proyek.'),
@@ -223,6 +223,7 @@ function buatMasukan(f, nilai, tabel) {
   if (f.t === 'klien') return pilihKlien(id, nilai, S.user.role === 'admin', f.wajib);
   if (f.t === 'tim') return pilihan(id, nilaiUnik('tim', 'nama').map((x) => [x, x]), nilai, f.wajib);
   if (f.t === 'tanggal') return h('input', {id, type: 'date', value: nilai ?? '', required: f.wajib});
+  if (['hp', 'email', 'npwp'].includes(f.t)) return kotakCek(h('input', {id, type: 'text', value: nilai ?? '', required: f.wajib, autocomplete: 'off'}), f.t, f.bantuan);
   if (f.t === 'angka') return h('input', {id, type: 'number', step: 'any', value: nilai ?? '', required: f.wajib});
   if (f.t === 'persen') return h('div', {class: 'berakhiran'}, h('input', {id, type: 'number', step: 'any', min: '0', value: kosong(nilai) ? '' : String(+(n(nilai) * 100).toFixed(4)), required: f.wajib}), h('span', null, '%'));
   if (f.t === 'uang') {
@@ -236,6 +237,7 @@ function buatMasukan(f, nilai, tabel) {
 function bacaMasukan(f, form) {
   const v = form.querySelector('#f-' + f.k).value.trim();
   if (v === '') return null;
+  if (['hp', 'email', 'npwp'].includes(f.t)) return periksaIsian(f.t, v).nilai ?? null;
   if (f.t === 'angka') return +v;
   if (f.t === 'persen') return +(+v / 100).toFixed(6);
   if (f.t === 'uang') return +v.replace(/\./g, '').replace(/[^\d-]/g, '');
@@ -255,6 +257,8 @@ function bukaForm(tabel, baris) {
   const form = h('form', {class: 'form', onsubmit: async (ev) => {
     ev.preventDefault();
     galat.textContent = '';
+    const salah = cekSemua(form);
+    if (salah) { galat.textContent = 'Perbaiki dulu isian yang bertanda ✕.'; salah.focus(); return; }
     const data = {};
     for (const f of def.isian) {
       const v = bacaMasukan(f, form);
@@ -278,7 +282,7 @@ function bukaForm(tabel, baris) {
     h('div', {class: 'form-grid'}, def.isian.map((f) => h('div', {class: 'medan' + (f.t === 'catatan' ? ' medan-lebar' : '')},
       h('label', {for: 'f-' + f.k}, f.label, f.wajib && h('span', {class: 'wajib', title: 'Wajib diisi'}, ' *')),
       buatMasukan(f, f.t === 'klien' ? S.d[tabel].find((x) => x.id === baris?.id)?.klien_ref : baris?.[f.k], tabel),
-      f.bantuan && h('span', {class: 'kecil redup'}, f.bantuan)))),
+      f.bantuan && !['hp', 'email', 'npwp'].includes(f.t) && h('span', {class: 'kecil redup'}, f.bantuan)))),
     galat,
     h('div', {class: 'form-kaki'}, hapus, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, 'Batal'), simpan));
   dlg = dialog((baris ? 'Ubah ' : 'Tambah ') + def.satuan, form);
@@ -300,8 +304,7 @@ function bukaTahapMassal() {
   const proyek = pilihan('m-proyek', urutkan(S.db.proyek, 'kode').map((p) => [p.kode, p.kode + ' — ' + isi(p.nama)]), S.filterProyek, true);
   const jumlah = h('select', {id: 'm-jumlah'}, h('option', {value: '4'}, '4 tahap (sampai Gambar Kerja)'), h('option', {value: '6'}, '6 tahap (sampai Pengawasan Berkala)'));
   const galat = h('p', {class: 'form-galat', role: 'alert'});
-  const dlg = dialog('Tambah semua tahap proyek', h('form', {class: 'form', onsubmit: async (ev) => {
-    ev.preventDefault();
+  const dlg = dialog('Tambah semua tahap proyek', h('form', {class: 'form', onsubmit: sekali(async () => {
     const kode = proyek.value, p = S.db.proyek.find((x) => x.kode === kode);
     const sudah = new Set(S.db.tahap.filter((t) => t.kode === kode).map((t) => t.tahap));
     const baru = TAHAP.slice(0, +jumlah.value).filter((t) => !sudah.has(t.nama)).map((t) => ({tabel: 'tahap', data: bersih({kode, tahap: t.nama, pic: p?.pic, bobot: t.bobot, selesai: 0})}));
@@ -311,7 +314,7 @@ function bukaTahapMassal() {
       S.filterProyek = kode;
       await muatData(); dlg.close(); render(); pesan(baru.length + ' tahap ditambahkan.');
     } catch (e) { galat.textContent = e.message; }
-  }},
+  })},
     h('p', {class: 'redup'}, 'Membuat satu baris per tahap dengan bobot default. Tahap yang sudah ada tidak digandakan.'),
     h('div', {class: 'form-grid'}, h('div', {class: 'medan'}, h('label', {for: 'm-proyek'}, 'Proyek'), proyek), h('div', {class: 'medan'}, h('label', {for: 'm-jumlah'}, 'Lingkup'), jumlah)),
     galat,
