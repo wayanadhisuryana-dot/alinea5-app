@@ -88,6 +88,8 @@ create policy records_akses on public.records for all to authenticated
 
 -- Tamu yang belum login tidak mendapat akses apa pun.
 revoke all on public.profiles, public.records from anon;
+grant usage on schema public to authenticated;
+grant execute on function public.peran() to authenticated;
 grant select, update on public.profiles to authenticated;
 grant select, insert, update, delete on public.records to authenticated;
 
