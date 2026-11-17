@@ -76,6 +76,8 @@ export function validasiKlien(masuk) {
   if (kontak.length) {
     const utama = kontak.findIndex((c) => c.utama);
     kontak.forEach((c, i) => { c.utama = i === Math.max(0, utama); });
+    const u = kontak.find((c) => c.utama);
+    if (data.jenis === 'Perorangan' && !u.nama) u.nama = data.nama || '';
     data.kontak = kontak;
   }
 

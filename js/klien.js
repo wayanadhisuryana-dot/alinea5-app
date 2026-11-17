@@ -47,8 +47,7 @@ export function renderKlien(el) {
       h('button', {class: 'th-urut', type: 'button', onclick: () => { S.urutKlien = {k: kunci, arah: k === kunci ? -arah : 1}; gambar(); }}, label, k === kunci ? (arah > 0 ? ' ▲' : ' ▼') : ''))), h('th', null, 'Aksi'));
     if (!S.d.klien.length) {
       badan.replaceChildren(h('tr', null, h('td', {colspan: String(KOLOM.length + 1), class: 'kosong-tabel'},
-        h('p', null, 'Belum ada klien. Klik Tambah klien atau Impor dari Excel.'),
-        h('div', {class: 'baris-tombol tengah-isi'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormKlien(null)}, 'Tambah klien'), h('button', {class: 'btn', type: 'button', onclick: () => pilihBerkas.click()}, 'Impor dari Excel')))));
+        h('p', null, 'Belum ada klien. Klik Tambah klien atau Impor Excel di atas.'))));
       return;
     }
     badan.replaceChildren(...(tampil.length ? tampil.map((r) => {
@@ -110,31 +109,42 @@ export function bukaFormKlien(id, opsi = {}) {
   nama.addEventListener('input', cekMirip);
   const jenis = h('select', {id: 'k-jenis', required: true}, h('option', {value: ''}, 'Pilih…'), JENIS_KLIEN.map((j) => h('option', {value: j, selected: lama?.jenis === j}, j)));
 
+  const perorangan = () => jenis.value === 'Perorangan';
   const wadahKontak = h('div', {class: 'kontak-wadah'});
   const tambahKontak = (c = {}) => {
     const i = ++nomorKontak;
-    const kartu = h('fieldset', {class: 'kontak'},
-      h('legend', null, 'Kontak'),
-      h('div', {class: 'form-grid'},
-        medan('Nama PIC', h('input', {id: 'kn-' + i, 'data-k': 'nama', type: 'text', value: c.nama ?? '', autocomplete: 'off'})),
-        medan('Jabatan PIC', h('input', {id: 'kj-' + i, 'data-k': 'jabatan', type: 'text', value: c.jabatan ?? '', placeholder: 'Owner, Procurement, Keuangan…', autocomplete: 'off'})),
+    const judul = h('legend');
+    const mNama = medan('Nama PIC', h('input', {id: 'kn-' + i, 'data-k': 'nama', type: 'text', value: c.nama ?? '', autocomplete: 'off'}));
+    const mJabatan = medan('Jabatan PIC', h('input', {id: 'kj-' + i, 'data-k': 'jabatan', type: 'text', value: c.jabatan ?? '', autocomplete: 'off'}));
+    const utama = h('label', {class: 'centang'}, h('input', {type: 'radio', name: 'k-utama', 'data-k': 'utama', checked: !!c.utama}), 'Kontak utama');
+    const hapus = h('button', {class: 'btn btn-kecil', type: 'button', onclick: () => { kartu.remove(); terapkanJenis(); }});
+    const kartu = h('fieldset', {class: 'kontak'}, judul,
+      h('div', {class: 'form-grid'}, mNama, mJabatan,
         medan('No. HP / WA', h('input', {id: 'kh-' + i, 'data-k': 'hp', type: 'text', inputmode: 'tel', value: c.hp ?? '', placeholder: '08xxxxxxxxxx', autocomplete: 'off'})),
         medan('Email', h('input', {id: 'ke-' + i, 'data-k': 'email', type: 'text', inputmode: 'email', value: c.email ?? '', placeholder: 'nama@contoh.com', autocomplete: 'off'}))),
-      h('div', {class: 'baris-tombol'},
-        h('label', {class: 'centang'}, h('input', {type: 'radio', name: 'k-utama', 'data-k': 'utama', checked: !!c.utama}), 'Kontak utama'),
-        h('span', {class: 'pegas'}),
-        h('button', {class: 'btn btn-kecil', type: 'button', onclick: () => { kartu.remove(); if (!wadahKontak.querySelector('[data-k=utama]:checked')) { const r = wadahKontak.querySelector('[data-k=utama]'); if (r) r.checked = true; } }}, 'Hapus kontak')));
+      h('div', {class: 'baris-tombol'}, utama, h('span', {class: 'pegas'}), hapus));
+    // Perorangan: kartu pertama adalah kontak klien sendiri (tanpa nama/jabatan); kartu lain = kontak
+    // lain seperti istri atau suami. Badan usaha: tiap kartu adalah satu PIC.
+    kartu.atur = (pertama) => {
+      const p = perorangan();
+      judul.textContent = p ? (pertama ? 'Kontak klien' : 'Kontak lain') : 'PIC';
+      mNama.hidden = mJabatan.hidden = p && pertama;
+      mNama.querySelector('label').textContent = p ? 'Nama' : 'Nama PIC';
+      mJabatan.querySelector('label').textContent = p ? 'Hubungan dengan klien' : 'Jabatan PIC';
+      mJabatan.querySelector('input').placeholder = p ? 'Istri, suami, anak…' : 'Owner, Procurement, Keuangan…';
+      utama.hidden = p; hapus.hidden = p && pertama; hapus.textContent = p ? 'Hapus kontak' : 'Hapus PIC';
+    };
     wadahKontak.append(kartu);
-    if (!wadahKontak.querySelector('[data-k=utama]:checked')) kartu.querySelector('[data-k=utama]').checked = true;
   };
-  (lama?.kontak?.length ? lama.kontak : [{utama: true}]).forEach(tambahKontak);
+  const kontakAwal = (lama?.kontak || []).slice().sort((x, y) => (lama?.jenis === 'Perorangan' ? y.utama - x.utama : 0));
+  (kontakAwal.length ? kontakAwal : [{utama: true}]).forEach(tambahKontak);
 
   const alamat = h('textarea', {id: 'k-alamat', rows: '3'}, lama?.alamat ?? '');
   const npwp = h('input', {id: 'k-npwp', type: 'text', inputmode: 'numeric', placeholder: '16 digit', autocomplete: 'off', value: lama?.npwp ?? ''});
   const ketNpwp = h('span', {class: 'kecil redup'});
   const cekNpwp = () => {
     const r = normNpwp(npwp.value);
-    ketNpwp.textContent = 'Untuk perorangan dapat diisi NIK.' + (r.galat ? ' ' + r.galat + '.' : r.nilai ? (r.lama ? ' 15 digit (format lama).' : ' 16 digit.') : '');
+    ketNpwp.textContent = (perorangan() ? 'Belum punya NPWP? Isi NIK. ' : '') + (r.galat ? r.galat + '.' : r.nilai ? (r.lama ? '15 digit (format lama).' : '16 digit.') : '');
   };
   npwp.addEventListener('input', cekNpwp); cekNpwp();
   const sumber = h('select', {id: 'k-sumber'}, h('option', {value: ''}, '— Pilih sumber —'),
@@ -151,7 +161,10 @@ export function bukaFormKlien(id, opsi = {}) {
   const simpan = h('button', {class: 'btn btn-utama', type: 'submit'}, 'Simpan');
   const kumpul = () => ({
     nama: nama.value, jenis: jenis.value, alamat: alamat.value, npwp: npwp.value, sumber: sumber.value, referensi_oleh: referensi.value, sumber_lain: sumberLain.value, catatan: catatan.value,
-    kontak: [...wadahKontak.querySelectorAll('.kontak')].map((kartu) => Object.fromEntries([...kartu.querySelectorAll('[data-k]')].map((e) => [e.dataset.k, e.type === 'radio' ? e.checked : e.value]))),
+    kontak: [...wadahKontak.querySelectorAll('.kontak')].map((kartu, i) => {
+      const c = Object.fromEntries([...kartu.querySelectorAll('[data-k]')].map((e) => [e.dataset.k, e.type === 'radio' ? e.checked : e.value]));
+      return perorangan() ? (i === 0 ? {...c, nama: nama.value, jabatan: '', utama: true} : {...c, utama: false}) : c;
+    }),
   });
   const kirim = async (ev) => {
     ev?.preventDefault();
@@ -187,20 +200,36 @@ export function bukaFormKlien(id, opsi = {}) {
     }
   };
   // Mengubah isian setelah peringatan muncul membatalkan "Tetap simpan".
-  const form = h('form', {class: 'form', novalidate: true, onsubmit: kirim, oninput: () => { lanjut = false; }},
-    h('div', {class: 'form-grid'},
-      h('div', {class: 'medan'}, h('label', {for: 'k-nama'}, 'Nama klien', h('span', {class: 'wajib'}, ' *')), nama),
-      h('div', {class: 'medan'}, h('label', {for: 'k-jenis'}, 'Jenis klien', h('span', {class: 'wajib'}, ' *')), jenis),
-      mirip),
+  const labelNama = h('span'), labelNpwp = h('label', {for: 'k-npwp'});
+  const tombolTambah = h('button', {class: 'btn btn-kecil', type: 'button', onclick: () => { tambahKontak(); terapkanJenis(); }});
+  const petunjukJenis = h('span', {class: 'kecil redup'}, 'Pilih jenis klien dulu; isian berikutnya menyesuaikan.');
+  const rinci = h('div', {class: 'form'},
+    h('div', {class: 'form-grid'}, h('div', {class: 'medan medan-lebar'}, h('label', {for: 'k-nama'}, labelNama, h('span', {class: 'wajib'}, ' *')), nama), mirip),
     wadahKontak,
-    h('div', null, h('button', {class: 'btn btn-kecil', type: 'button', onclick: () => tambahKontak()}, '+ Tambah kontak')),
+    h('div', null, tombolTambah),
     h('div', {class: 'form-grid'},
-      medan('Alamat penagihan', alamat), medan('NPWP klien', npwp, ketNpwp),
+      medan('Alamat penagihan', alamat), h('div', {class: 'medan'}, labelNpwp, npwp, ketNpwp),
       medan('Sumber klien', sumber), medanReferensi, medanSumberLain,
       medan('Catatan', catatan, null, 'medan-lebar')),
-    lama && h('p', {class: 'kecil redup'}, 'Dihitung otomatis: ' + lama.jml_proyek + ' proyek, ' + lama.jml_kontrak + ' kontrak, total ' + rpRingkas(lama.total_kontrak) + ', terakhir aktif ' + tgl(lama.terakhir_aktif) + ', status ' + lama.status_klien + '.'),
-    galat, peringatan,
+    lama && h('p', {class: 'kecil redup'}, 'Dihitung otomatis: ' + lama.jml_proyek + ' proyek, ' + lama.jml_kontrak + ' kontrak, total ' + rpRingkas(lama.total_kontrak) + ', terakhir aktif ' + tgl(lama.terakhir_aktif) + ', status ' + lama.status_klien + '.'));
+  function terapkanJenis() {
+    const p = perorangan();
+    rinci.hidden = !jenis.value; petunjukJenis.hidden = !!jenis.value;
+    labelNama.textContent = p ? 'Nama lengkap' : 'Nama badan usaha';
+    labelNpwp.textContent = p ? 'NPWP / NIK' : 'NPWP';
+    tombolTambah.textContent = p ? '+ Tambah kontak lain (istri, suami, …)' : '+ Tambah PIC';
+    const kartu = [...wadahKontak.children];
+    if (!kartu.length) { tambahKontak({utama: true}); return terapkanJenis(); }
+    kartu.forEach((k, i) => k.atur(i === 0));
+    if (p || !wadahKontak.querySelector('[data-k=utama]:checked')) kartu[0].querySelector('[data-k=utama]').checked = true;
+  }
+  jenis.addEventListener('change', () => { terapkanJenis(); cekNpwp(); });
+  // Mengubah isian setelah peringatan muncul membatalkan "Tetap simpan".
+  const form = h('form', {class: 'form', novalidate: true, onsubmit: kirim, oninput: () => { lanjut = false; }},
+    h('div', {class: 'form-grid'}, h('div', {class: 'medan'}, h('label', {for: 'k-jenis'}, 'Jenis klien', h('span', {class: 'wajib'}, ' *')), jenis, petunjukJenis)),
+    rinci, galat, peringatan,
     h('div', {class: 'form-kaki'}, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, 'Batal'), simpan));
+  terapkanJenis();
   dlg = dialog(lama ? 'Ubah klien' : 'Tambah klien', form);
   if (!lama && opsi.namaAwal) { nama.value = opsi.namaAwal; cekMirip(); }
 }
