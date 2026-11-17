@@ -127,3 +127,31 @@ textarea { resize: vertical; }
   .utama { padding: 16px 16px 64px; }
   .alat input[type=search] { width: 100%; }
 }
+
+/* Lebar isi halaman dibatasi agar nyaman dibaca di layar lebar. */
+.utama > * { max-width: 1400px; width: 100%; }
+
+/* Modul Klien */
+.btn-kecil { padding: 3px 10px; font-size: .85rem; }
+.tautan { background: none; border: 0; padding: 0; color: var(--aksen); cursor: pointer; text-align: left; text-decoration: underline; }
+.th-urut { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; white-space: nowrap; }
+.th-urut:hover { color: var(--fg); }
+.tabel .nw { white-space: nowrap; }
+.kosong-tabel { text-align: center; padding: 36px 16px !important; }
+.kosong-tabel p { margin-bottom: 12px; color: var(--redup); }
+.tengah-isi { justify-content: center; }
+.kontak-wadah { display: flex; flex-direction: column; gap: 10px; }
+.kontak { border: 1px solid var(--garis); border-radius: var(--radius); padding: 10px 12px 12px; margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.kontak legend { font-size: .85rem; font-weight: 600; padding: 0 6px; color: var(--redup); }
+.centang { display: inline-flex; align-items: center; gap: 6px; }
+.kotak-info, .kotak-galat { border: 1px solid var(--waspada); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: color-mix(in srgb, var(--waspada) 10%, transparent); }
+.kotak-galat { border-color: var(--buruk); background: color-mix(in srgb, var(--buruk) 10%, transparent); }
+.kotak-info ul, .kotak-galat ul, .cocok { margin: 0; padding-left: 18px; }
+.gulir-pendek { max-height: 260px; overflow-y: auto; }
+.kombo { position: relative; }
+.kombo-daftar { position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 20; background: var(--panel); border: 1px solid var(--garis); border-radius: 6px; box-shadow: var(--bayang); max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; }
+.kombo-opsi { background: none; border: 0; text-align: left; padding: 7px 10px; cursor: pointer; }
+.kombo-opsi:hover, .kombo-opsi:focus-visible { background: var(--aksen-lembut); }
+.kombo-opsi[aria-selected=true] { font-weight: 600; }
+.kombo-tambah { color: var(--aksen); border-top: 1px solid var(--garis); font-weight: 600; }
+.kombo-kosong { padding: 7px 10px; }

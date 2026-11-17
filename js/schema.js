@@ -23,7 +23,6 @@ export const OPSI = {
   kategoriMasalah: ['Revisi / permintaan klien', 'Perubahan lingkup', 'Jadwal', 'Pembayaran', 'Lapangan / tukang', 'Perizinan (PBG dll)', 'Internal tim', 'Lainnya'],
   dampak: ['Rendah', 'Sedang', 'Tinggi'],
   statusMasalah: ['Terbuka', 'Proses', 'Selesai'],
-  sumberKlien: ['Referensi', 'Klien lama / repeat', 'Instagram', 'Website', 'Pameran / event', 'Lainnya'],
   jenisPerjanjian: ['Lump sum (harga tetap)', '% dari RAB / nilai konstruksi', 'Per m²', 'Borongan konstruksi', 'Cost plus fee', 'Lainnya'],
   bentukDokumen: ['Kontrak ditandatangani', 'SPK / PO ditandatangani', 'Hanya penawaran disetujui', 'Hanya chat / email', 'Tidak ada'],
   ppn: ['Termasuk PPN', 'Belum termasuk PPN', 'Tanpa PPN'],
@@ -38,7 +37,7 @@ export const OPSI = {
 };
 
 // Jenis isian (t): teks, catatan, angka, uang, persen, tanggal, pilih, yt,
-// proyek (kode proyek), klien (nama klien), tim (nama anggota tim).
+// proyek (kode proyek), klien (id klien, dipilih dari daftar), tim (nama anggota tim).
 // akses: 'umum' = admin dan arsitek, 'admin' = hanya admin.
 // kolom: [kunci, judul, format] untuk daftar; kunci boleh hasil hitungan (lihat calc.js).
 export const TABEL = {
@@ -48,7 +47,7 @@ export const TABEL = {
     isian: [
       {k: 'kode', label: 'Kode proyek', t: 'teks', wajib: true, contoh: 'A5-26-001', pola: 'A5-\\d{2}-\\d{3}', unik: true},
       {k: 'nama', label: 'Nama proyek', t: 'teks', wajib: true},
-      {k: 'klien', label: 'Klien', t: 'klien'},
+      {k: 'klien_id', label: 'Klien', t: 'klien'},
       {k: 'lokasi', label: 'Lokasi (kab/kota)', t: 'pilih', opsi: 'lokasi'},
       {k: 'jenis_bangunan', label: 'Jenis bangunan', t: 'pilih', opsi: 'jenisBangunan'},
       {k: 'layanan', label: 'Jenis layanan', t: 'pilih', opsi: 'layanan'},
@@ -100,20 +99,11 @@ export const TABEL = {
     ],
     kolom: [['tanggal', 'Tanggal', 'tanggal'], ['nama_proyek', 'Proyek'], ['kategori', 'Kategori'], ['uraian', 'Uraian', 'lebar'], ['dampak', 'Dampak', 'pill'], ['pic', 'PIC'], ['target', 'Target', 'tanggal'], ['status', 'Status', 'pill'], ['umur', 'Umur (hari)', 'angka'], ['lewat', 'Lewat target?', 'pill']],
   },
+  // Klien punya halaman, formulir, dan impor sendiri (js/klien.js); di sini hanya identitasnya.
   klien: {
-    label: 'Klien', satuan: 'klien', grup: 'Master', akses: 'umum', urut: 'nama',
+    label: 'Klien', satuan: 'klien', grup: 'Master', akses: 'admin', urut: 'nama',
     bantuan: 'Satu baris per klien. Nama di sini menjadi pilihan di Proyek dan Kontrak.',
-    isian: [
-      {k: 'nama', label: 'Nama klien', t: 'teks', wajib: true, unik: true},
-      {k: 'pic', label: 'Kontak / PIC', t: 'teks'},
-      {k: 'hp', label: 'No. HP / WA', t: 'teks'},
-      {k: 'email', label: 'Email', t: 'teks'},
-      {k: 'alamat', label: 'Alamat penagihan', t: 'teks'},
-      {k: 'npwp', label: 'NPWP klien', t: 'teks'},
-      {k: 'sumber', label: 'Sumber klien', t: 'pilih', opsi: 'sumberKlien'},
-      {k: 'catatan', label: 'Catatan', t: 'catatan'},
-    ],
-    kolom: [['nama', 'Nama klien'], ['pic', 'Kontak / PIC'], ['hp', 'HP / WA'], ['email', 'Email'], ['alamat', 'Alamat'], ['sumber', 'Sumber']],
+    isian: [], kolom: [],
   },
   tim: {
     label: 'Tim', satuan: 'anggota tim', grup: 'Master', akses: 'umum', urut: 'nama',
@@ -129,7 +119,7 @@ export const TABEL = {
     bantuan: 'Satu baris per kontrak. Setiap perubahan permintaan klien yang menambah pekerjaan dicatat sebagai addendum tertulis di kolom Nilai addendum.',
     isian: [
       {k: 'kode', label: 'Proyek', t: 'proyek', wajib: true},
-      {k: 'klien', label: 'Klien', t: 'klien'},
+      {k: 'klien_id', label: 'Klien', t: 'klien'},
       {k: 'no_kontrak', label: 'No. kontrak / SPK', t: 'teks'},
       {k: 'tgl_kontrak', label: 'Tanggal kontrak', t: 'tanggal'},
       {k: 'jenis_perjanjian', label: 'Jenis perjanjian', t: 'pilih', opsi: 'jenisPerjanjian'},

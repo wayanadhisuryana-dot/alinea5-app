@@ -1,84 +1,12 @@
 import {TABEL, OPSI, TAHAP, NAMA_TABEL, bolehAkses} from './schema.js';
-import {hitung, ringkasan, temuan, hariIni, n} from './calc.js';
-import {store, pakaiSupabase} from './store.js';
+import {ringkasan, temuan, hariIni, n} from './calc.js';
+import {store} from './store.js';
 import {bacaExcel} from './import-excel.js';
+import {S, muatData, bersih} from './state.js';
+import {h, idn, rp, rpRingkas, persen, tgl, kosong, isi, pill, batangProgres, FORMAT, RATA_KANAN, pesan, aman, dialog} from './ui.js';
+import {renderKlien, pilihKlien} from './klien.js';
 
-// ---------- keadaan ----------
-const S = {db: {}, d: null, user: null, cari: '', filterProyek: ''};
 const akar = document.getElementById('app');
-
-// ---------- alat bantu ----------
-const h = (tag, attrs, ...anak) => {
-  const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs || {})) {
-    if (v == null || v === false) continue;
-    if (k === 'class') e.className = v;
-    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
-    else if (k === 'style') Object.assign(e.style, v);
-    else if (v === true) e.setAttribute(k, '');
-    else e.setAttribute(k, v);
-  }
-  e.append(...anak.flat(Infinity).filter((x) => x != null && x !== false));
-  return e;
-};
-const idn = (x, d = 0) => Number(x).toLocaleString('id-ID', {maximumFractionDigits: d});
-const rp = (v) => 'Rp ' + idn(Math.round(n(v)));
-const rpRingkas = (v) => {
-  const x = n(v), a = Math.abs(x);
-  if (a >= 1e9) return 'Rp ' + idn(x / 1e9, 2) + ' M';
-  if (a >= 1e6) return 'Rp ' + idn(x / 1e6, 1) + ' jt';
-  return 'Rp ' + idn(x);
-};
-const persen = (v, d = 0) => (v == null || v === '' ? '—' : idn(n(v) * 100, d) + '%');
-const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-const tgl = (s) => {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || '');
-  return m ? +m[3] + ' ' + BULAN[+m[2] - 1] + ' ' + m[1] : '—';
-};
-const kosong = (v) => v == null || v === '';
-const isi = (v) => (kosong(v) ? '—' : String(v));
-
-const BURUK = ['Terlambat', 'Lewat tempo', 'Sebagian - lewat tempo', 'LEWAT', 'Tinggi', 'HABIS', 'Tidak', 'Rusak', 'Hilang', 'Batal', 'BELUM ADA / CEK'];
-const WASPADA = ['Terlambat ringan', 'Tertunda - klien', 'Tertunda - internal', 'Sedang', 'Sebagian', 'Menunggu bayar', 'Dana titipan klien', 'Perlu servis', 'Data belum lengkap', 'Terbuka', 'Belum ditagih'];
-const BAIK = ['Sesuai jadwal', 'Selesai', 'Lunas', 'Aktif', 'Berjalan', 'Rendah', 'Ya', 'Baik'];
-const pill = (v) => {
-  if (kosong(v)) return '—';
-  const t = String(v);
-  const jenis = BURUK.includes(t) ? 'buruk' : WASPADA.includes(t) || t.startsWith('≤') ? 'waspada' : BAIK.includes(t) ? 'baik' : 'netral';
-  return h('span', {class: 'pill pill-' + jenis}, t);
-};
-const batangProgres = (v) => (v == null ? '—' : h('div', {class: 'prog'},
-  h('div', {class: 'prog-jalur'}, h('div', {class: 'prog-isi', style: {width: Math.max(0, Math.min(100, n(v) * 100)) + '%'}})),
-  h('span', null, persen(v))));
-
-const FORMAT = {
-  uang: (v) => (kosong(v) ? '—' : rp(v)),
-  persen: (v) => persen(v),
-  persen1: (v) => persen(v, 1),
-  tanggal: (v) => tgl(v),
-  angka: (v) => (kosong(v) ? '—' : idn(v)),
-  desimal: (v) => (kosong(v) ? '—' : idn(v, 1)),
-  pill, progres: batangProgres,
-};
-const RATA_KANAN = ['uang', 'persen', 'persen1', 'angka', 'desimal'];
-
-const pesan = (teks, jenis = 'info') => {
-  const el = h('div', {class: 'toast toast-' + jenis, role: 'status'}, teks);
-  document.body.append(el);
-  setTimeout(() => el.remove(), 4500);
-};
-const aman = (fn) => async (...a) => {
-  try { await fn(...a); } catch (e) { console.error(e); pesan(e.message || String(e), 'galat'); }
-};
-
-// ---------- data ----------
-async function muatData() {
-  const records = await store.muat();
-  S.db = Object.fromEntries(NAMA_TABEL.map((t) => [t, []]));
-  for (const r of records) if (S.db[r.tabel]) S.db[r.tabel].push({...r.data, id: r.id});
-  S.d = hitung(S.db, hariIni());
-}
-const bersih = (data) => Object.fromEntries(Object.entries(data).filter(([k, v]) => k !== 'id' && !kosong(v)));
 
 // ---------- rute ----------
 const rute = () => (location.hash.replace(/^#/, '') || 'dashboard');
@@ -98,11 +26,11 @@ function render() {
 
   const utama = h('main', {class: 'utama', id: 'utama'});
   const tabel = r.startsWith('t-') ? r.slice(2) : null;
-  if (tabel && TABEL[tabel] && bolehAkses(tabel, S.user.role)) renderTabel(utama, tabel);
+  if (tabel && TABEL[tabel] && bolehAkses(tabel, S.user.role)) (tabel === 'klien' ? renderKlien : renderTabel)(utama, tabel);
   else if (r === 'pengaturan') renderPengaturan(utama);
   else renderDashboard(utama);
 
-  akar.replaceChildren(
+  akar.replaceChildren(...[
     h('header', {class: 'atas'},
       h('button', {class: 'tombol-menu', type: 'button', 'aria-label': 'Buka menu', 'aria-controls': 'nav', onclick: () => document.body.classList.toggle('nav-buka')}, '☰'),
       h('a', {class: 'merek', href: '#dashboard'}, 'Alinea 5', h('span', null, 'Back office & proyek')),
@@ -110,9 +38,10 @@ function render() {
         h('span', {class: 'pengguna'}, S.user.email, ' · ', S.user.role === 'admin' ? 'Admin' : 'Arsitek'),
         store.mode === 'supabase' && h('button', {class: 'btn btn-halus', type: 'button', onclick: aman(async () => { await store.keluar(); S.user = null; render(); })}, 'Keluar'))),
     store.mode === 'lokal' && h('div', {class: 'pita'}, 'Mode demo: data hanya tersimpan di browser ini dan tidak terlihat oleh orang lain. Sambungkan Supabase di js/config.js untuk data bersama.'),
-    h('div', {class: 'badan'}, nav, utama));
+    h('div', {class: 'badan'}, nav, utama)].filter(Boolean));
   document.body.classList.remove('nav-buka');
 }
+S.render = render;
 const tautanNav = (ke, label, aktif, jumlah) => h('a', {href: '#' + ke, class: 'nav-item' + (aktif === ke ? ' aktif' : ''), 'aria-current': aktif === ke ? 'page' : null}, h('span', null, label), jumlah != null && h('span', {class: 'nav-jml'}, String(jumlah)));
 
 // ---------- masuk ----------
@@ -291,6 +220,7 @@ function buatMasukan(f, nilai, tabel) {
   if (f.t === 'catatan') return h('textarea', {id, rows: '2', required: f.wajib}, nilai ?? '');
   if (f.t === 'pilih' || f.t === 'yt') return pilihan(id, OPSI[f.t === 'yt' ? 'yt' : f.opsi].map((o) => [o, o]), nilai, f.wajib);
   if (f.t === 'proyek') return pilihan(id, urutkan(S.db.proyek, 'kode').map((p) => [p.kode, p.kode + ' — ' + isi(p.nama)]), nilai, f.wajib);
+  if (f.t === 'klien') return pilihKlien(id, nilai, S.user.role === 'admin');
   if (f.t === 'tim') return pilihan(id, nilaiUnik('tim', 'nama').map((x) => [x, x]), nilai, f.wajib);
   if (f.t === 'tanggal') return h('input', {id, type: 'date', value: nilai ?? '', required: f.wajib});
   if (f.t === 'angka') return h('input', {id, type: 'number', step: 'any', value: nilai ?? '', required: f.wajib});
@@ -299,7 +229,7 @@ function buatMasukan(f, nilai, tabel) {
     const inp = h('input', {id, type: 'text', inputmode: 'numeric', value: kosong(nilai) ? '' : idn(Math.round(n(nilai))), required: f.wajib, autocomplete: 'off', oninput: () => { inp.value = formatUang(inp.value); }});
     return h('div', {class: 'berawalan'}, h('span', null, 'Rp'), inp);
   }
-  const saran = f.t === 'klien' ? nilaiUnik('klien', 'nama') : f.saran ? nilaiUnik(tabel, f.k) : null;
+  const saran = f.saran ? nilaiUnik(tabel, f.k) : null;
   return [h('input', {id, type: 'text', value: nilai ?? '', required: f.wajib, placeholder: f.contoh, pattern: f.pola, list: saran ? id + '-saran' : null, autocomplete: 'off'}),
     saran && h('datalist', {id: id + '-saran'}, saran.map((s) => h('option', {value: s})))];
 }
@@ -310,14 +240,6 @@ function bacaMasukan(f, form) {
   if (f.t === 'persen') return +(+v / 100).toFixed(6);
   if (f.t === 'uang') return +v.replace(/\./g, '').replace(/[^\d-]/g, '');
   return v;
-}
-
-function dialog(judul, isiDialog) {
-  const dlg = h('dialog', {class: 'dialog'}, h('h2', null, judul), isiDialog);
-  dlg.addEventListener('close', () => dlg.remove());
-  document.body.append(dlg);
-  dlg.showModal();
-  return dlg;
 }
 
 function bukaForm(tabel, baris) {
@@ -342,15 +264,15 @@ function bukaForm(tabel, baris) {
         return;
       }
     }
-    simpan.disabled = true;
+    simpan.disabled = true; simpan.textContent = 'Menyimpan…';
     try {
       await store.simpan(tabel, baris?.id, data);
       await muatData(); dlg.close(); render(); pesan(def.label + ': tersimpan.');
-    } catch (e) { galat.textContent = e.message; simpan.disabled = false; }
+    } catch (e) { galat.textContent = e.message; simpan.disabled = false; simpan.textContent = 'Simpan'; }
   }},
     h('div', {class: 'form-grid'}, def.isian.map((f) => h('div', {class: 'medan' + (f.t === 'catatan' ? ' medan-lebar' : '')},
       h('label', {for: 'f-' + f.k}, f.label, f.wajib && h('span', {class: 'wajib', title: 'Wajib diisi'}, ' *')),
-      buatMasukan(f, baris?.[f.k], tabel),
+      buatMasukan(f, f.t === 'klien' ? S.d[tabel].find((x) => x.id === baris?.id)?.klien_ref : baris?.[f.k], tabel),
       f.bantuan && h('span', {class: 'kecil redup'}, f.bantuan)))),
     galat,
     h('div', {class: 'form-kaki'}, hapus, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, 'Batal'), simpan));

@@ -80,17 +80,22 @@ create policy profiles_ubah on public.profiles for update to authenticated
   using (public.peran() = 'admin')
   with check (public.peran() = 'admin');
 
--- Data: admin mengakses semua tabel; arsitek hanya tabel proyek (tanpa keuangan, SDM, aset, legal).
+-- Data: admin mengakses semua tabel. Arsitek mengisi tabel proyek (tanpa keuangan, SDM, aset,
+-- legal) dan hanya bisa MEMBACA klien, karena nama klien dipilih di formulir Proyek.
 drop policy if exists records_akses on public.records;
-create policy records_akses on public.records for all to authenticated
-  using (
-    public.peran() = 'admin'
-    or (public.peran() = 'arsitek' and tabel in ('proyek', 'tahap', 'masalah', 'klien', 'tim'))
-  )
-  with check (
-    public.peran() = 'admin'
-    or (public.peran() = 'arsitek' and tabel in ('proyek', 'tahap', 'masalah', 'klien', 'tim'))
-  );
+drop policy if exists records_admin on public.records;
+create policy records_admin on public.records for all to authenticated
+  using (public.peran() = 'admin')
+  with check (public.peran() = 'admin');
+
+drop policy if exists records_arsitek on public.records;
+create policy records_arsitek on public.records for all to authenticated
+  using (public.peran() = 'arsitek' and tabel in ('proyek', 'tahap', 'masalah', 'tim'))
+  with check (public.peran() = 'arsitek' and tabel in ('proyek', 'tahap', 'masalah', 'tim'));
+
+drop policy if exists records_arsitek_baca_klien on public.records;
+create policy records_arsitek_baca_klien on public.records for select to authenticated
+  using (public.peran() = 'arsitek' and tabel = 'klien');
 
 -- Tamu yang belum login tidak mendapat akses apa pun.
 revoke all on public.profiles, public.records from anon;

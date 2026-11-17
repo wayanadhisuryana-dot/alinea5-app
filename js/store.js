@@ -86,6 +86,8 @@ function storeSupabase() {
   };
 }
 
-export const pakaiSupabase = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+// Untuk pengujian di komputer sendiri: localStorage 'alinea5:demo' = '1' di localhost memaksa mode demo.
+const paksaDemo = typeof location !== 'undefined' && ['localhost', '127.0.0.1'].includes(location.hostname) && localStorage.getItem('alinea5:demo') === '1';
+export const pakaiSupabase = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY) && !paksaDemo;
 export const store = pakaiSupabase ? storeSupabase() : storeLokal();
 export const semuaTabel = NAMA_TABEL;

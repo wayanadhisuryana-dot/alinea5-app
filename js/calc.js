@@ -1,5 +1,6 @@
 // Rumus yang di Excel ada di kolom abu-abu. Semua fungsi murni: masukan data + tanggal hari ini.
 import {TAHAP, TOLERANSI} from './schema.js';
+import {normNama, kontakDari} from './klien-util.js';
 
 export const n = (v) => (v == null || v === '' || isNaN(+v) ? 0 : +v);
 const jumlah = (rows, f) => rows.reduce((a, r) => a + n(typeof f === 'function' ? f(r) : r[f]), 0);
@@ -17,6 +18,13 @@ export function hitung(db, today = hariIni()) {
   const t = (nama) => db[nama] || [];
   const namaProyek = Object.fromEntries(t('proyek').map((p) => [p.kode, p.nama]));
   const np = (kode) => namaProyek[kode] ?? (kode ? 'Kode tidak ada di daftar Proyek' : '');
+
+  // Relasi ke klien: lewat klien_id; data lama yang hanya menyimpan nama dicocokkan lewat nama.
+  const klienById = Object.fromEntries(t('klien').map((k) => [k.id, k]));
+  const klienByNama = {};
+  for (const k of t('klien')) klienByNama[normNama(k.nama)] ??= k.id;
+  const refKlien = (r) => (r.klien_id && klienById[r.klien_id] ? r.klien_id : (r.klien && klienByNama[normNama(r.klien)]) || null);
+  const denganKlien = (r) => { const ref = refKlien(r); return {klien_ref: ref, klien: ref ? klienById[ref].nama : r.klien || ''}; };
 
   const tahap = t('tahap').map((r) => {
     const bobot = r.bobot == null || r.bobot === '' ? bobotDefault(r.tahap) : n(r.bobot);
@@ -39,7 +47,7 @@ export function hitung(db, today = hariIni()) {
       const dev = progres - waktu;
       status_jadwal = dev >= TOLERANSI.ringan ? 'Sesuai jadwal' : dev >= TOLERANSI.terlambat ? 'Terlambat ringan' : 'Terlambat';
     }
-    return {...p, progres, mundur, status_jadwal};
+    return {...p, ...denganKlien(p), progres, mundur, status_jadwal};
   });
 
   const masalah = t('masalah').map((m) => {
@@ -64,7 +72,7 @@ export function hitung(db, today = hariIni()) {
     const total = totalKontrak[k.kode];
     const ditagih = jumlah(tk.filter((x) => x.tgl_invoice), 'nilai');
     const diterima = jumlah(tk, 'diterima');
-    return {...k, nama_proyek: np(k.kode), total, ditagih, diterima, piutang: ditagih - diterima, belum_ditagih: total - ditagih, pct_terbayar: total ? diterima / total : null};
+    return {...k, ...denganKlien(k), nama_proyek: np(k.kode), total, ditagih, diterima, piutang: ditagih - diterima, belum_ditagih: total - ditagih, pct_terbayar: total ? diterima / total : null};
   });
 
   const vendor = t('vendor').map((v) => {
@@ -101,7 +109,23 @@ export function hitung(db, today = hariIni()) {
     return {...l, sisa_hari, status};
   });
 
-  return {proyek, tahap, masalah, klien: t('klien'), tim: t('tim'), kontrak, termin, vendor, hutang_lain, sdm, aset, legal};
+  // Kolom klien yang dihitung dari Proyek dan Kontrak.
+  const klienProyek = Object.fromEntries(proyek.map((p) => [p.kode, p.klien_ref]));
+  const terbaru = (...tgl) => tgl.filter(Boolean).sort().pop() || null;
+  const klien = t('klien').map((k) => {
+    const pk = proyek.filter((p) => p.klien_ref === k.id);
+    const kk = kontrak.filter((c) => (c.klien_ref || klienProyek[c.kode]) === k.id);
+    const kontak = kontakDari(k), utama = kontak.find((c) => c.utama);
+    const hidup = pk.filter((p) => p.status !== 'Batal');
+    const status_klien = !pk.length ? 'Prospek' : hidup.some((p) => p.status !== 'Selesai') ? 'Aktif' : 'Selesai';
+    return {
+      ...k, kontak, kontak_utama: utama?.nama || '', jabatan_utama: utama?.jabatan || '', hp_utama: utama?.hp || '', email_utama: utama?.email || '',
+      jml_proyek: pk.length, jml_kontrak: kk.length, total_kontrak: jumlah(kk, 'total'),
+      terakhir_aktif: terbaru(...pk.map((p) => p.mulai), ...kk.map((c) => c.tgl_kontrak)), status_klien,
+    };
+  });
+
+  return {proyek, tahap, masalah, klien, tim: t('tim'), kontrak, termin, vendor, hutang_lain, sdm, aset, legal};
 }
 
 // Angka ringkasan untuk dashboard, dari hasil hitung().

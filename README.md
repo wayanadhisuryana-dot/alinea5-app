@@ -5,7 +5,7 @@ Admin dan tim arsitek mengisi data di browser; dashboard, status, umur piutang, 
 
 - **Tampilan:** situs statis (HTML + JavaScript tanpa proses build), ditayangkan lewat GitHub Pages.
 - **Data dan login:** Supabase (PostgreSQL + Auth). Repo ini **tidak berisi data** apa pun.
-- **Peran:** `admin` melihat semua tabel; `arsitek` hanya Proyek, Progres Tahap, Masalah, Klien, dan Tim.
+- **Peran:** `admin` melihat semua tabel; `arsitek` hanya Proyek, Progres Tahap, Masalah, dan Tim (klien hanya bisa dipilih, tidak diubah).
 
 Selama Supabase belum disambungkan, aplikasi berjalan dalam **mode demo**: data hanya tersimpan di browser yang sedang dipakai.
 
@@ -14,7 +14,8 @@ Selama Supabase belum disambungkan, aplikasi berjalan dalam **mode demo**: data 
 | Kelompok | Tabel | Akses |
 | --- | --- | --- |
 | Proyek | Proyek, Progres Tahap, Masalah & Risiko | admin, arsitek |
-| Master | Klien, Tim | admin, arsitek |
+| Master | Klien (dengan cegah duplikat, gabung, ekspor/impor Excel) | admin |
+| Master | Tim | admin, arsitek |
 | Keuangan | Kontrak, Termin & Piutang, Vendor & Tukang, Hutang Lain | admin |
 | Administrasi | SDM, Aset, Legal & Izin | admin |
 
@@ -73,6 +74,10 @@ js/calc.js            semua rumus (fungsi murni)
 js/store.js           penyimpanan: browser (demo) atau Supabase
 js/import-excel.js    pembaca dua file Excel Alinea 5
 js/app.js             antarmuka: dashboard, tabel, formulir, pengaturan
+js/ui.js, js/state.js alat bantu tampilan dan keadaan bersama
+js/klien.js           modul Klien: daftar, formulir, gabung, impor, pemilih klien
+js/klien-util.js      aturan klien: normalisasi, validasi, duplikat
+js/klien-excel.js     ekspor, template, dan pembaca Excel klien
 js/config.js          alamat dan kunci anon Supabase
 supabase/schema.sql   tabel, pemicu, dan Row Level Security
 ```
