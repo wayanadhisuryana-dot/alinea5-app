@@ -1,6 +1,7 @@
 -- Alinea 5 — skema database Supabase.
 -- Jalankan SELURUH file ini sekali di Supabase: SQL Editor > New query > Run.
 -- Aman dijalankan ulang.
+-- Setelah itu jalankan juga file di folder migrasi/ sesuai urutan nama (mulai 0B-perusahaan-id.sql).
 
 -- 1. Profil pengguna: peran dan status aktif ---------------------------------
 create table if not exists public.profiles (

@@ -7,10 +7,13 @@ export const n = (v) => (v == null || v === '' || isNaN(+v) ? 0 : +v);
 const jumlah = (rows, f) => rows.reduce((a, r) => a + n(typeof f === 'function' ? f(r) : r[f]), 0);
 const hari = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 864e5); // a - b, dalam hari
 const jepit = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
-export const hariIni = () => {
-  const d = new Date();
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-};
+// Zona waktu untuk menentukan "hari ini" (bukan jam perangkat). Diatur admin di Pengaturan; bawaan WITA.
+export const ZONA_WAKTU = {'Asia/Jakarta': 'WIB (Asia/Jakarta)', 'Asia/Makassar': 'WITA (Asia/Makassar)', 'Asia/Jayapura': 'WIT (Asia/Jayapura)'};
+export const ZONA_BAWAAN = 'Asia/Makassar';
+let zona = ZONA_BAWAAN;
+export const aturZona = (z) => { zona = ZONA_WAKTU[z] ? z : ZONA_BAWAAN; };
+export const zonaAktif = () => zona;
+export const hariIni = () => new Intl.DateTimeFormat('en-CA', {timeZone: zona, year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date());
 const bobotDefault = (nama) => (TAHAP.find((t) => t.nama === nama) || {}).bobot ?? 0;
 const batasHari = (tgl, today, batas, label) => (!tgl ? '' : tgl < today ? 'HABIS' : hari(tgl, today) <= batas ? label : '');
 

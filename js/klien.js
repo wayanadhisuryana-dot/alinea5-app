@@ -48,7 +48,9 @@ export function renderKlien(el) {
       h('button', {class: 'th-urut', type: 'button', onclick: () => { S.urutKlien = {k: kunci, arah: k === kunci ? -arah : 1}; gambar(); }}, label, k === kunci ? (arah > 0 ? ' ▲' : ' ▼') : ''))), h('th', null, 'Aksi'));
     if (!S.d.klien.length) {
       badan.replaceChildren(h('tr', null, h('td', {colspan: String(KOLOM.length + 1), class: 'kosong-tabel'},
-        h('p', null, 'Belum ada klien. Klik Tambah klien atau Impor Excel di atas.'))));
+        h('p', null, 'Belum ada klien. Klik Tambah klien atau Impor dari Excel.'),
+        h('div', {class: 'baris-tombol tengah-isi'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormKlien(null)}, 'Tambah klien'),
+          h('button', {class: 'btn', type: 'button', onclick: () => pilihBerkas.click()}, 'Impor dari Excel')))));
       return;
     }
     badan.replaceChildren(...(tampil.length ? tampil.map((r) => {
@@ -59,7 +61,7 @@ export function renderKlien(el) {
         await store.hapus(r.id); await segarkan(); pesan('Klien dihapus.');
       })}, 'Hapus');
       return h('tr', null,
-        h('td', null, h('button', {class: 'tautan', type: 'button', onclick: () => bukaFormKlien(r.id)}, r.nama)),
+        h('td', null, h('a', {href: '#klien-' + r.id, title: 'Buka detail klien'}, r.nama)),
         h('td', null, isi(r.jenis)),
         h('td', null, r.kontak_utama ? [h('span', null, r.kontak_utama), r.jabatan_utama && h('span', {class: 'kecil redup blok'}, r.jabatan_utama)] : '—'),
         h('td', {class: 'nw'}, r.hp_utama ? h('a', {href: 'https://wa.me/' + r.hp_utama, target: '_blank', rel: 'noopener', title: 'Buka WhatsApp'}, r.hp_utama) : '—'),
@@ -89,6 +91,40 @@ export function renderKlien(el) {
       h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormKlien(null)}, 'Tambah klien')),
     h('div', {class: 'gulir'}, h('table', {class: 'tabel'}, h('thead', null, kepalaTabel), badan)));
   gambar();
+}
+
+// ---------- detail ----------
+const waTautan = (hp) => (hp ? h('a', {href: 'https://wa.me/' + hp, target: '_blank', rel: 'noopener', title: 'Buka WhatsApp'}, hp) : '—');
+const rincian = (pasangan) => h('dl', {class: 'rincian'}, pasangan.filter(Boolean).map(([k, v]) => [h('dt', null, k), h('dd', null, v == null || v === '' ? '—' : v)]));
+const tabelKecil = (judul, kosongTeks, rows) => (rows.length
+  ? h('div', {class: 'gulir'}, h('table', {class: 'tabel'}, h('thead', null, h('tr', null, judul.map(([l, kanan]) => h('th', {class: kanan ? 'kanan' : null}, l)))), h('tbody', null, rows)))
+  : h('p', {class: 'redup'}, kosongTeks));
+
+export function renderDetailKlien(el, id) {
+  const k = S.d.klien.find((x) => x.id === id);
+  const kembali = h('a', {href: '#t-klien', class: 'kecil'}, '← Daftar klien');
+  if (!k) { el.append(h('div', {class: 'kepala'}, kembali, h('h1', null, 'Klien tidak ditemukan'), h('p', {class: 'redup'}, 'Data ini mungkin sudah digabung atau dihapus.'))); return; }
+  const proyek = S.d.proyek.filter((p) => p.klien_ref === id);
+  const kodeProyek = new Set(proyek.map((p) => p.kode));
+  const kontrak = S.d.kontrak.filter((c) => (c.klien_ref || null) === id || (!c.klien_ref && kodeProyek.has(c.kode)));
+  const sumber = k.sumber === 'Referensi' && k.referensi_oleh ? 'Referensi: ' + k.referensi_oleh : k.sumber === 'Lainnya' && k.sumber_lain ? 'Lainnya: ' + k.sumber_lain : k.sumber;
+  el.append(
+    h('div', {class: 'kepala'}, kembali,
+      h('div', {class: 'judul-baris'}, h('h1', null, k.nama), h('span', {class: 'pegas'}), h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormKlien(k.id)}, 'Ubah data')),
+      h('p', {class: 'redup'}, [k.jenis, k.status_klien, k.jml_proyek + ' proyek', k.total_kontrak ? 'total kontrak ' + rpRingkas(k.total_kontrak) : null, k.terakhir_aktif ? 'terakhir aktif ' + tgl(k.terakhir_aktif) : null].filter(Boolean).join(' · '))),
+    h('section', {class: 'kartu'}, h('h2', null, 'Data klien'),
+      rincian([['Jenis klien', k.jenis], ['Alamat penagihan', k.alamat], [k.jenis === 'Perorangan' ? 'NPWP / NIK' : 'NPWP', k.npwp], ['Sumber klien', sumber], ['Catatan', k.catatan]])),
+    h('section', {class: 'kartu'}, h('h2', null, k.jenis === 'Perorangan' ? 'Kontak' : 'Kontak / PIC'),
+      tabelKecil([['Nama'], ['Jabatan'], ['HP/WA'], ['Email'], ['']], 'Belum ada kontak.', k.kontak.map((c) => h('tr', null,
+        h('td', null, isi(c.nama)), h('td', null, isi(c.jabatan)), h('td', {class: 'nw'}, waTautan(c.hp)),
+        h('td', null, c.email ? h('a', {href: 'mailto:' + c.email}, c.email) : '—'), h('td', null, c.utama ? pill('Kontak utama') : ''))))),
+    h('section', {class: 'kartu'}, h('h2', null, 'Proyek'),
+      tabelKecil([['Kode'], ['Proyek'], ['Status'], ['Mulai']], 'Belum ada proyek untuk klien ini.', proyek.map((p) => h('tr', null,
+        h('td', {class: 'nw'}, p.kode), h('td', null, isi(p.nama)), h('td', null, pill(p.status)), h('td', {class: 'nw'}, tgl(p.mulai)))))),
+    S.user.role === 'admin' && h('section', {class: 'kartu'}, h('h2', null, 'Kontrak'),
+      tabelKecil([['Kode'], ['No. kontrak'], ['Tanggal'], ['Nilai total', 1], ['Diterima', 1], ['Piutang', 1]], 'Belum ada kontrak untuk klien ini.', kontrak.map((c) => h('tr', null,
+        h('td', {class: 'nw'}, c.kode), h('td', null, isi(c.no_kontrak)), h('td', {class: 'nw'}, tgl(c.tgl_kontrak)),
+        h('td', {class: 'kanan'}, rpRingkas(c.total)), h('td', {class: 'kanan'}, rpRingkas(c.diterima)), h('td', {class: 'kanan'}, rpRingkas(c.piutang)))))));
 }
 
 // ---------- formulir ----------

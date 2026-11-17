@@ -1,6 +1,6 @@
 // Keadaan aplikasi yang dipakai bersama oleh semua halaman.
 import {NAMA_TABEL, terapkanOpsi} from './schema.js';
-import {hitung, hariIni} from './calc.js';
+import {hitung, hariIni, aturZona} from './calc.js';
 import {store} from './store.js';
 import {entriDirektori} from './sdm-util.js';
 
@@ -17,6 +17,7 @@ export async function muatData(sudahSinkron = false) {
   // Pengaturan aplikasi (pilihan dropdown, jabatan, parameter peringatan) disimpan sebagai satu catatan.
   S.pengaturan = records.find((r) => r.tabel === 'pengaturan') || null;
   terapkanOpsi(S.pengaturan?.data?.opsi);
+  aturZona(S.pengaturan?.data?.zona_waktu);
   S.d = hitung(S.db, hariIni(), S.pengaturan?.data);
   if (!sudahSinkron && S.user?.role === 'admin' && await sinkronDirektori()) await muatData(true);
 }

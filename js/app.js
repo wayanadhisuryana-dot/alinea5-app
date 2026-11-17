@@ -1,10 +1,10 @@
 import {TABEL, OPSI, TAHAP, NAMA_TABEL, bolehAkses, OPSI_BISA_DIATUR, opsiBawaan, opsiSekarang} from './schema.js';
-import {ringkasan, temuan, hariIni, n} from './calc.js';
+import {ringkasan, temuan, hariIni, n, ZONA_WAKTU, zonaAktif} from './calc.js';
 import {store} from './store.js';
 import {bacaExcel} from './import-excel.js';
 import {S, muatData, bersih} from './state.js';
 import {h, idn, rp, rpRingkas, persen, tgl, kosong, isi, pill, batangProgres, FORMAT, RATA_KANAN, pesan, aman, sekali, dialog, formatUang, buangTeksPalsu} from './ui.js';
-import {renderKlien, pilihKlien} from './klien.js';
+import {renderKlien, renderDetailKlien, pilihKlien} from './klien.js';
 import {kotakCek, cekSemua, periksaIsian} from './cek.js';
 import {renderSdm, renderDetailPegawai} from './sdm.js';
 import {editorTimProyek, pilihAnggota, namaTimInternal} from './tim-proyek.js';
@@ -25,7 +25,7 @@ function render() {
   const grup = {};
   for (const t of tabelMenu()) (grup[TABEL[t].grup] ||= []).push(t);
   for (const [nama, daftar] of Object.entries(grup)) {
-    nav.append(h('div', {class: 'nav-grup'}, nama), ...daftar.map((t) => tautanNav('t-' + t, TABEL[t].label, r.startsWith('sdm-') ? 't-sdm' : r, S.db[t].length)));
+    nav.append(h('div', {class: 'nav-grup'}, nama), ...daftar.map((t) => tautanNav('t-' + t, TABEL[t].label, r.startsWith('sdm-') ? 't-sdm' : r.startsWith('klien-') ? 't-klien' : r, S.db[t].length)));
   }
   nav.append(h('div', {class: 'nav-grup'}, 'Lainnya'), tautanNav('pengaturan', 'Pengaturan', r));
 
@@ -33,6 +33,7 @@ function render() {
   const tabel = r.startsWith('t-') ? r.slice(2) : null;
   if (tabel && TABEL[tabel] && !TABEL[tabel].tersembunyi && bolehAkses(tabel, S.user.role)) ({klien: renderKlien, sdm: renderSdm}[tabel] || renderTabel)(utama, tabel);
   else if (r.startsWith('sdm-') && bolehAkses('sdm', S.user.role)) renderDetailPegawai(utama, r.slice(4));
+  else if (r.startsWith('klien-') && bolehAkses('klien', S.user.role)) renderDetailKlien(utama, r.slice(6));
   else if (r === 'pengaturan') renderPengaturan(utama);
   else renderDashboard(utama);
 
@@ -391,7 +392,7 @@ function renderPengaturan(el) {
     }}, 'Unduh cadangan (.json)')),
     h('label', {for: 'pulih-json', class: 'kecil redup'}, 'Pulihkan dari file cadangan'), pulih, hasilPulih));
 
-  if (admin) el.append(bagianJabatan(), bagianParamSdm());
+  if (admin) el.append(bagianZona(), bagianJabatan(), bagianParamSdm());
 
   // Pilihan dropdown
   if (admin) {
@@ -440,18 +441,6 @@ function renderPengaturan(el) {
         })))));
     })();
   }
-
-  // Hapus semua
-  if (admin) {
-    const ketik = h('input', {id: 'hapus-ketik', type: 'text', placeholder: 'Ketik HAPUS', autocomplete: 'off', 'aria-label': 'Ketik HAPUS untuk mengonfirmasi'});
-    el.append(h('section', {class: 'kartu'}, h('h2', null, 'Hapus semua data'),
-      h('p', null, 'Mengosongkan semua tabel. Tindakan ini tidak bisa dibatalkan; unduh cadangan lebih dulu.'),
-      h('div', {class: 'baris-tombol'}, ketik, h('button', {class: 'btn btn-bahaya', type: 'button', onclick: aman(async () => {
-        if (ketik.value.trim() !== 'HAPUS') throw new Error('Ketik HAPUS (huruf besar) untuk mengonfirmasi.');
-        await store.gantiTabel(NAMA_TABEL, []);
-        await muatData(); render(); pesan('Semua data dihapus.');
-      })}, 'Hapus semua data'))));
-  }
 }
 
 // Menyimpan satu bagian pengaturan tanpa menyentuh bagian lain.
@@ -462,6 +451,18 @@ async function simpanPengaturan(bagian, isiBaru) {
     throw new Error('Pengaturan belum bisa disimpan ke database. Jalankan SQL pembaruan terbaru di Supabase, lalu coba lagi. (' + e.message + ')');
   }
   await muatData(); render();
+}
+
+// Zona waktu: menentukan tanggal "hari ini" untuk peringatan, umur piutang, dan jatuh tempo.
+function bagianZona() {
+  const pilih = h('select', {id: 'zona-waktu'}, Object.entries(ZONA_WAKTU).map(([v, l]) => h('option', {value: v, selected: v === zonaAktif()}, l)));
+  return h('section', {class: 'kartu'}, h('h2', null, 'Zona waktu'),
+    h('p', null, 'Menentukan tanggal "hari ini" untuk peringatan, umur piutang, dan jatuh tempo, apa pun jam di perangkat pengguna. Hari ini: ' + tgl(hariIni()) + '.'),
+    h('div', {class: 'form-grid'}, h('div', {class: 'medan'}, h('label', {for: 'zona-waktu'}, 'Zona waktu'), pilih)),
+    h('div', {class: 'baris-tombol'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => {
+      await simpanPengaturan('zona_waktu', pilih.value);
+      pesan('Zona waktu tersimpan: ' + ZONA_WAKTU[pilih.value] + '.');
+    })}, 'Simpan zona waktu')));
 }
 
 // Daftar jabatan SDM: tambah, ubah nama, tandai perlu SKK/STRA, nonaktifkan. Yang dipakai tidak bisa dihapus.
