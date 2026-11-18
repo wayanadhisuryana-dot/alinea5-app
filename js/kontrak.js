@@ -9,6 +9,8 @@ import {bisaUbah} from './akses.js';
 import {h, idn, rp, tgl, isi, pill, pesan, aman, dialog, bandingkan, sambilMenyimpan, pilihCari, kepalaUrut, formatUang} from './ui.js';
 import {medan, teks, tanggal, pilihan, uang, kaki, tombolHapus, catatanKunci, opsiProyek, namaRekening, pilihBukti, tombolBukti, kartuBelumSiap} from './keuangan.js';
 import {terkunci, akunKode, nomorInvoiceBerikut} from './keuangan-data.js';
+import {tabelKontrakVendor, bukaFormKontrakVendor} from './pihak-proyek.js';
+import {tawarkanPengembalian} from './dompet.js';
 import {
   MODE_PPN, AKUN_PENDAPATAN, STATUS_TERMIN, KELOMPOK_UMUR, SATUAN_DENDA, akunPendapatanDari, bagi, bpKePersen, persenKeBp, tambahHari,
   hitungTermin, nilaiKontrak, periksaKontrak, pkpPada, sesuaikanTermin, ringkasUmur, alokasiPenerimaan, dendaAlinea,
@@ -57,10 +59,13 @@ export function renderKontrak(el) {
   const TAB = [['klien', 'Klien'], ['vendor', 'Vendor']];
   const panel = h('div', {class: 'kartu', role: 'tabpanel'});
   el.append(h('div', {class: 'tabs', role: 'tablist'}, TAB.map(([k, label]) => h('button', {class: 'tab', type: 'button', role: 'tab', 'aria-selected': String(S.tabKontrak === k),
-    onclick: () => { S.tabKontrak = k; S.render(); }}, label, k === 'vendor' && h('span', {class: 'label-segera'}, 'Segera')))), panel);
+    onclick: () => { S.tabKontrak = k; S.render(); }}, label))), panel);
   if (S.tabKontrak === 'vendor') {
-    panel.append(h('div', {class: 'kosong-ajakan'}, h('h2', null, 'Kontrak vendor'),
-      h('p', null, 'Kontrak dengan vendor, mandor, dan tukang dibuat pada Tahap 4. Tab ini sudah disiapkan agar arsip kontrak klien dan vendor ada di satu tempat.')));
+    if (K().proyek_siap === false) { panel.append(h('p', null, 'Kontrak vendor memerlukan pembaruan database Tahap 4 (supabase/migrasi/4-proyek.sql).')); return; }
+    panel.append(h('div', {class: 'alat'}, h('span', {class: 'redup kecil'}, S.d.vendor.length + ' kontrak vendor · dikelola di menu Pihak Proyek'), h('span', {class: 'pegas'}),
+      h('a', {class: 'btn', href: '#pihak-proyek'}, 'Buka Pihak Proyek'),
+      bisaUbah('pihak_proyek') && h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormKontrakVendor(null)}, '+ Kontrak vendor')),
+    tabelKontrakVendor(S.d.vendor));
     return;
   }
   panelKontrakKlien(panel);
@@ -734,6 +739,8 @@ function bukaFormPenerimaan(t, k, p, bolehUbah = true) {
         await store.keu.simpanPenerimaan(p?.id, d);
       });
       dlg.close(); await segarkanKeuangan(); pesan('Penerimaan tersimpan dan dijurnal.'); bukaTermin(t.id);
+      // Tahap 4D: termin proyek peminjam diterima -> tawarkan pengembalian pinjaman antar proyek.
+      if (!p && d.jumlah > 0) tawarkanPengembalian(k.proyek_kode || k.kode);
     } catch (e) { galat.textContent = e.message; }
   }},
     kunci && catatanKunci(p.tanggal),

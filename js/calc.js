@@ -2,6 +2,7 @@
 import {TAHAP, TOLERANSI} from './schema.js';
 import {normNama, kontakDari} from './klien-util.js';
 import {ringkasPiutang, ringkasUmur} from './kontrak-util.js';
+import {ringkasVendor, ringkasPembelian, ringkasPinjaman, dompetProyek} from './proyek-util.js';
 import {aturSdm, cariJabatan, kontrakDari, dokumenDari, gajiSaatIni, gajiDari, totalGaji, peringatanPegawai, masaKerja, bawaanTimProyek, refSdm, STATUS, STATUS_PENDEK} from './sdm-util.js';
 
 export const n = (v) => (v == null || v === '' || isNaN(+v) ? 0 : +v);
@@ -71,11 +72,12 @@ export function hitung(db, today = hariIni(), atur = {}, keu = {}) {
   });
   const termin = piutang.baris.map((b) => ({...b, ringkas: undefined, kode: b.kontrak?.proyek_kode, nama_proyek: np(b.kontrak?.proyek_kode), termin_ke: b.ke, no_kontrak: b.kontrak?.no_kontrak}));
 
-  const vendor = t('vendor').map((v) => {
-    const dasar = n(v.nilai) * n(v.opname);
-    const hak = dasar * (1 - n(v.retensi));
-    return {...v, nama_proyek: np(v.kode), hak, hutang: hak - n(v.dibayar), retensi_ditahan: dasar * n(v.retensi), sisa_kontrak: n(v.nilai) - n(v.dibayar)};
-  });
+  // Tahap 4: kontrak vendor (Pihak Proyek), pembelian material, pinjaman antar proyek, dan dompet tiap proyek.
+  const vendor = ringkasVendor(keu, today).map((v) => ({...v, kode: v.proyek_kode, nama_proyek: np(v.proyek_kode), vendor: v.vendor_nama}));
+  const pembelian = ringkasPembelian(keu, today).map((b) => ({...b, kode: b.proyek_kode, nama_proyek: b.proyek_kode ? np(b.proyek_kode) : 'Stok kantor'}));
+  const pinjaman = ringkasPinjaman(keu, today);
+  const ctxDompet = {kontrakKlien: piutang.kontrak, vendor, pembelian, pinjaman};
+  const dompet = Object.fromEntries(proyek.map((p) => [p.kode, dompetProyek(keu, p.kode, ctxDompet)]));
 
   const hutang_lain = t('hutang_lain').map((h) => {
     const sisa = n(h.total) - n(h.dibayar);
@@ -135,7 +137,7 @@ export function hitung(db, today = hariIni(), atur = {}, keu = {}) {
     };
   });
 
-  return {proyek, tahap, masalah, klien, tim: t('tim'), kontrak, termin, vendor, hutang_lain, sdm, aset, legal};
+  return {proyek, tahap, masalah, klien, tim: t('tim'), kontrak, termin, vendor, pembelian, pinjaman, dompet, hutang_lain, sdm, aset, legal};
 }
 
 // Angka ringkasan untuk dashboard, dari hasil hitung().
@@ -149,7 +151,8 @@ export function ringkasan(d) {
     jumlah_kontrak: d.kontrak.length, nilai_kontrak: nilai, ditagih: jumlah(d.kontrak, 'ditagih'), diterima,
     pct_diterima: nilai ? diterima / nilai : 0,
     piutang: jumlah(d.kontrak, 'piutang'), belum_ditagih: jumlah(d.kontrak, 'belum_ditagih'), umur,
-    hutang_vendor: jumlah(d.vendor, 'hutang'), retensi: jumlah(d.vendor, 'retensi_ditahan'), hutang_lain: jumlah(d.hutang_lain, 'sisa'),
+    hutang_vendor: d.vendor.reduce((s, v) => s + Math.max(0, v.hutang), 0), retensi: jumlah(d.vendor, 'retensi_ditahan'),
+    hutang_supplier: d.pembelian.reduce((s, b) => s + (b.cara_bayar === 'tempo' ? Math.max(0, b.sisa) : 0), 0), hutang_lain: jumlah(d.hutang_lain, 'sisa'),
     gaji_bulanan: jumlah(d.sdm.filter((s) => s.aktif !== 'Keluar'), 'gaji_total'), nilai_buku_aset: jumlah(d.aset, 'nilai_buku'),
     proyek_total: d.proyek.length, proyek_berjalan: berjalan.length,
     proyek_tertunda: d.proyek.filter((p) => /^Tertunda/.test(p.status || '')).length,
@@ -170,7 +173,10 @@ export function temuan(d, fmtTanggal = (x) => x) {
     butir('Kontrak', 'Kontrak tanpa dokumen bertanda tangan', d.kontrak.filter((k) => !/ditandatangani/i.test(k.bentuk_dokumen || '')), (k) => k.nama_proyek + ' (' + (k.bentuk_dokumen || 'belum diisi') + ')'),
     butir('Proyek', 'Perubahan di luar kontrak yang belum tertulis', d.proyek.filter((p) => p.perubahan_belum_tertulis === 'Ya'), (p) => p.nama),
     butir('Proyek', 'Proyek dengan data jadwal belum lengkap', d.proyek.filter((p) => p.status_jadwal === 'Data belum lengkap' && p.status !== 'Batal'), (p) => p.nama),
-    butir('Vendor', 'Vendor tanpa perjanjian tertulis', d.vendor.filter((v) => v.dokumen_tertulis === 'Tidak'), (v) => v.vendor + ' (' + v.nama_proyek + ')'),
+    butir('Vendor', 'Kontrak vendor tanpa file SPK', d.vendor.filter((v) => !v.file), (v) => v.vendor + ' (' + v.nama_proyek + ')'),
+    butir('Vendor', 'Pembayaran vendor melebihi hak (lebih bayar)', d.vendor.filter((v) => v.hutang < 0), (v) => v.vendor + ' (' + v.nama_proyek + ')'),
+    butir('Pembelian', 'Hutang supplier lewat jatuh tempo', d.pembelian.filter((b) => b.status === 'Lewat jatuh tempo'), (b) => b.supplier_nama + (b.no_nota ? ' ' + b.no_nota : '')),
+    butir('Dompet', 'Pinjaman antar proyek lewat rencana kembali', d.pinjaman.filter((x) => x.lewat), (x) => (x.dari_proyek || 'Kas perusahaan') + ' → ' + x.ke_proyek),
     butir('Hutang', 'Kewajiban lewat jatuh tempo', d.hutang_lain.filter((h) => h.alert === 'LEWAT'), (h) => h.uraian || h.kreditur),
     butir('Hutang', 'Kewajiban jatuh tempo dalam 14 hari', d.hutang_lain.filter((h) => h.alert && h.alert !== 'LEWAT'), (h) => h.uraian || h.kreditur),
     butir('SDM', 'Peringatan kontrak, SKK/STRA, atau magang', d.sdm.filter((s) => s.jml_peringatan), (s) => s.nama + ' (' + s.peringatan.map((p) => p.teks).join(', ') + ')'),

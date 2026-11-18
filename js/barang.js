@@ -155,7 +155,7 @@ const tambah12 = (t) => { const [y, m, d] = t.split('-'); return (+y - 1) + '-' 
 
 // ---------- formulir barang ----------
 let nomorKonversi = 0;
-export function bukaFormBarang(id, jenis = 'barang') {
+export function bukaFormBarang(id, jenis = 'barang', {setelahSimpan} = {}) {
   const lama = id ? S.db.barang.find((b) => b.id === id) : null;
   if (lama) jenis = jenisDari(lama);
   const J = JENIS[jenis], bisa = bisaUbah('barang');
@@ -227,7 +227,7 @@ export function bukaFormBarang(id, jenis = 'barang') {
       }
       await store.simpan('barang', bid, data);
       dlg.close(); await segarkan(); pesan(J.satuan[0].toUpperCase() + J.satuan.slice(1) + ' tersimpan.');
-      if (!lama) location.hash = '#barang-' + bid;
+      if (setelahSimpan) setelahSimpan(bid); else if (!lama) location.hash = '#barang-' + bid;
     } catch (e) {
       galat.replaceChildren(h('b', null, 'Gagal menyimpan: '), e.message); galat.hidden = false; lanjut = false;
       simpan.disabled = false; simpan.textContent = 'Simpan';
@@ -260,14 +260,16 @@ export function bukaFormBarang(id, jenis = 'barang') {
 // ---------- formulir harga ----------
 // Harga dari transaksi (Pembelian / Kontrak vendor) tidak bisa diubah di sini. Modul sumbernya (Tahap 4) mengisi
 // x.ref = {id, nomor, tanggal} supaya pengguna tahu transaksi mana yang harus dibuka.
-const MENU_SUMBER = {'Pembelian': 'Pembelian Material', 'Kontrak vendor': 'Kontrak'};
+const MENU_SUMBER = {'Pembelian': 'Pembelian Material', 'Kontrak vendor': 'Pihak Proyek'};
+const RUTE_SUMBER = {'Pembelian': '#pembelian-', 'Kontrak vendor': '#pihak-proyek-'};
 function peringatanSumber(x) {
   const nomor = x.ref?.nomor, menu = MENU_SUMBER[x.sumber] || x.sumber;
   const transaksi = 'transaksi ' + x.sumber + (nomor ? ' nomor ' + nomor : '') + ' tanggal ' + tgl(x.ref?.tanggal || x.tanggal) + (x.pihak_nama ? ' (' + x.pihak_nama + ')' : '');
   return h('div', {class: 'kotak-galat', role: 'alert'},
     h('b', null, 'Harga ini tidak bisa diubah atau dihapus di sini.'),
     h('span', null, 'Harga ini tercatat otomatis dari ' + transaksi + '.'),
-    h('span', null, 'Bila harganya salah, buka menu ' + menu + ' → ' + (nomor ? 'transaksi ' + nomor : 'transaksi tersebut') + ', lalu perbaiki di sana. Riwayat harga ini ikut diperbaiki otomatis.'));
+    h('span', null, 'Bila harganya salah, buka menu ' + menu + ' → ' + (nomor ? 'transaksi ' + nomor : 'transaksi tersebut') + ', lalu perbaiki di sana. Riwayat harga ini ikut diperbaiki otomatis.'),
+    x.ref?.id && RUTE_SUMBER[x.sumber] && h('a', {href: RUTE_SUMBER[x.sumber] + x.ref.id, onclick: (ev) => ev.target.closest('dialog')?.close()}, 'Buka transaksi sumber →'));
 }
 
 export function bukaFormHarga(b, x) {

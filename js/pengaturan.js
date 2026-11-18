@@ -320,10 +320,12 @@ export function barisPemetaan(K = S.keu) {
 function bagianPemetaan() {
   const rows = barisPemetaan();
   const urutJenis = ['saldo_awal', 'kas_masuk', 'kas_keluar', 'transfer', 'transfer_biaya', 'invoice_piutang', 'invoice_pendapatan', 'invoice_titipan', 'invoice_ppn',
-    'terima_rekening', 'terima_potongan', 'terima_pendapatan', 'terima_titipan', 'terima_ppn', 'terima_piutang'];
+    'terima_rekening', 'terima_potongan', 'terima_pendapatan', 'terima_titipan', 'terima_ppn', 'terima_piutang',
+    'opname_beban', 'opname_titipan', 'opname_hutang', 'opname_retensi', 'bayar_vendor_hutang', 'bayar_vendor_retensi', 'bayar_vendor_kas', 'bayar_vendor_pajak',
+    'beli_material', 'beli_persediaan', 'beli_ppn', 'beli_titipan', 'beli_kas', 'beli_hutang', 'bayar_supplier_hutang', 'bayar_supplier_kas'];
   rows.sort((a, b) => urutJenis.indexOf(a.jenis) - urutJenis.indexOf(b.jenis) || a.urut - b.urut);
   return h('section', {class: 'kartu'}, h('h2', null, 'Pemetaan jurnal'),
-    h('p', null, 'Tabel ini menentukan akun debit dan kredit setiap jurnal otomatis. Tabel disimpan di database; aplikasi hanya membacanya. Jenis transaksi baru (invoice, pembelian, aset) ditambahkan pada tahap berikutnya.'),
+    h('p', null, 'Tabel ini menentukan akun debit dan kredit setiap jurnal otomatis. Tabel disimpan di database; aplikasi hanya membacanya. Jenis transaksi baru (aset, gaji, dan lainnya) ditambahkan pada tahap berikutnya.'),
     h('div', {class: 'alat'}, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: aman(() => eksporExcel('pemetaan-jurnal-' + hariIni() + '.xlsx', [{nama: 'Pemetaan jurnal', kolom: [
       {judul: 'Jenis transaksi', k: 'nama', lebar: 34}, {judul: 'Kode jenis', k: 'jenis', lebar: 16}, {judul: 'Sisi', k: 'sisi'}, {judul: 'Akun', k: 'akun_teks', lebar: 36}, {judul: 'Keterangan', k: 'keterangan', lebar: 60}], baris: rows}]))}, 'Ekspor Excel')),
     h('div', {class: 'gulir'}, h('table', {class: 'tabel'},
@@ -347,6 +349,9 @@ function bagianAkuntansi() {
   const segarContoh = () => { const g = periksaFormatInvoice(format.value); contoh.textContent = g || 'Contoh nomor berikutnya: ' + nomorInvoice(format.value, hariIni(), (S.keu.termin || []).map((t) => t.no_invoice)); contoh.classList.toggle('form-galat', !!g); };
   format.addEventListener('input', segarContoh); segarContoh();
   const jatuhTempo = h('input', {id: 'ak-jt', type: 'number', min: '0', max: '365', step: '1', value: String(a.jatuh_tempo_hari ?? JATUH_TEMPO_BAWAAN), class: 'angka-pendek'});
+  // Tahap 4: batas pinjaman antar proyek dari dana titipan (opsional).
+  const tahap4 = S.keu.proyek_siap !== false;
+  const batasPinjam = h('input', {id: 'ak-pinjam', type: 'number', min: '0', max: '100', step: '1', value: a.batas_pinjam_titipan_persen ?? '', class: 'angka-pendek', placeholder: 'tanpa batas'});
   return kartu('Pengaturan akuntansi',
     h('div', {class: 'form-grid'},
       medan('Basis pengakuan pendapatan', basis, {bantuan: 'Kas: pendapatan dicatat saat uang diterima; invoice tidak membuat jurnal. Akrual: pendapatan dicatat saat invoice terbit.'}),
@@ -354,6 +359,7 @@ function bagianAkuntansi() {
       medan('Batas kapitalisasi aset', h('div', {class: 'berawalan'}, h('span', null, 'Rp'), batas), {id: 'ak-batas', bantuan: 'Pembelian barang di atas nilai ini dicatat sebagai aset (dipakai mulai Tahap 5).'}),
       medan('Tarif PPN', h('div', {class: 'berakhiran'}, tarif, h('span', null, '%')), {id: 'ak-ppn', bantuan: 'Dipakai untuk kontrak baru. Kontrak yang sudah ada tetap memakai tarif saat kontrak dibuat.'}),
       medan('Jatuh tempo invoice bawaan', h('div', {class: 'berakhiran'}, jatuhTempo, h('span', null, 'hari')), {id: 'ak-jt', bantuan: 'Dari tanggal invoice; bisa diubah per invoice.'}),
+      tahap4 && medan('Batas pinjaman dari dana titipan', h('div', {class: 'berakhiran'}, batasPinjam, h('span', null, '%')), {id: 'ak-pinjam', bantuan: 'Opsional. Pinjaman antar proyek maksimal sekian persen dari saldo dana titipan proyek pemberi; lebih dari itu perlu konfirmasi pemilik (super admin). Kosongkan bila tanpa batas.'}),
       medan('Format nomor invoice', h('div', null, format, contoh), {lebar: true, id: 'ak-format', bantuan: 'Kode: {YYYY} tahun, {YY} tahun 2 digit, {MM} bulan, {NNN} nomor urut (jumlah N = jumlah digit). Nomor urut dihitung ulang setiap pola berubah, mis. setiap bulan.'})),
     !bolehBasis && h('p', {class: 'kecil redup'}, 'Basis hanya bisa diubah di bulan pertama tahun buku (' + NAMA_BULAN_PANJANG[a.bulan_awal_buku - 1] + '). Setiap perubahan dicatat di audit log.'),
     galat,
@@ -369,6 +375,11 @@ function bagianAkuntansi() {
       if (!/^\d+$/.test(jt) || +jt > 365) { galat.textContent = 'Jatuh tempo bawaan diisi 0 sampai 365 hari.'; jatuhTempo.focus(); return; }
       const ubahan = {basis: basis.value, bulan_awal_buku: +bulan.value, batas_kapitalisasi: nilai};
       if (S.keu.kontrak_siap !== false) Object.assign(ubahan, {tarif_ppn_bp: bp, format_invoice: format.value.trim(), jatuh_tempo_hari: +jt});
+      if (tahap4) {
+        const bpj = batasPinjam.value.trim();
+        if (bpj !== '' && (!/^\d+$/.test(bpj) || +bpj > 100)) { galat.textContent = 'Batas pinjaman diisi 0 sampai 100 persen, atau dikosongkan.'; batasPinjam.focus(); return; }
+        ubahan.batas_pinjam_titipan_persen = bpj === '' ? null : +bpj;
+      }
       try { await store.keu.aturAkuntansi(ubahan); }
       catch (e) { galat.textContent = e.message; return; }
       await segarkanKeuangan(); pesan('Pengaturan akuntansi tersimpan.');
@@ -626,7 +637,10 @@ function bagianCadangan() {
 // ---------- audit log ----------
 const NAMA_AUDIT = {rekening: 'Rekening', kas_transaksi: 'Kas umum', transfer: 'Transfer', jurnal: 'Jurnal', jurnal_baris: 'Baris jurnal', akun: 'Bagan akun',
   tutup_buku: 'Tutup buku', akuntansi: 'Pengaturan akuntansi', peran: 'Peran', perusahaan: 'Profil perusahaan', profiles: 'Pengguna',
-  kontrak_klien: 'Kontrak klien', kontrak_addendum: 'Addendum kontrak', termin: 'Termin / invoice', penerimaan: 'Penerimaan termin'};
+  kontrak_klien: 'Kontrak klien', kontrak_addendum: 'Addendum kontrak', termin: 'Termin / invoice', penerimaan: 'Penerimaan termin',
+  kontrak_vendor: 'Kontrak vendor', kontrak_vendor_item: 'Item kontrak vendor', kontrak_vendor_termin: 'Termin kontrak vendor', opname: 'Opname',
+  pembayaran_vendor: 'Pembayaran vendor', pembelian: 'Pembelian', pembelian_baris: 'Baris pembelian', pembayaran_supplier: 'Pembayaran supplier',
+  pinjaman_proyek: 'Pinjaman antar proyek', pengembalian_pinjaman: 'Pengembalian pinjaman'};
 const AKSI = {insert: 'Tambah', update: 'Ubah', delete: 'Hapus'};
 const ringkasNilai = (v) => (v == null ? '—' : typeof v === 'object' ? (v.nama || v.path ? v.nama || v.path : JSON.stringify(v).slice(0, 60)) : typeof v === 'number' ? idn(v) : String(v).slice(0, 60));
 function perubahan(lama, baru) {

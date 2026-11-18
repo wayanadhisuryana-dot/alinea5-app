@@ -22,6 +22,8 @@ export const JENIS_NOTIF = {
   tenggat_proyek: {label: 'Tenggat pekerjaan proyek di kontrak', hari: 14, menu: 'kontrak'},
   retensi: {label: 'Retensi sudah bisa ditagih', hari: 0, menu: 'termin'},
   garansi: {label: 'Masa garansi berakhir', hari: 30, menu: 'kontrak'},
+  pinjaman_proyek: {label: 'Pinjaman antar proyek sampai rencana kembali', hari: 0, menu: 'kas'},
+  hutang_supplier: {label: 'Jatuh tempo hutang supplier (pembelian tempo)', hari: 7, menu: 'pembelian'},
 };
 
 // Pengaturan notifikasi efektif: {jenis: {aktif, hari}}. Untuk jenis SDM, batas hari diambil dari parameter SDM.
@@ -68,6 +70,13 @@ export function hitungNotifikasi(today = hariIni()) {
         tambah('tenggat_proyek', k.id, k.selesai_berlaku, 'Tenggat ' + (k.nama_proyek || k.kode) + ' (' + k.no_kontrak + ')' + (denda?.denda ? ' terlewat · potensi denda ' + rp(denda.denda) : ''), '#kontrak-' + k.id);
       }
       if (boleh('garansi')) tambah('garansi', k.id, k.garansi_akhir, 'Garansi ' + (k.nama_proyek || k.kode) + ' (' + k.no_kontrak + ') berakhir', '#kontrak-' + k.id);
+    }
+    if (boleh('pinjaman_proyek')) for (const x of d.pinjaman || []) if (x.sisa > 0) {
+      tambah('pinjaman_proyek', x.id, x.rencana_kembali, 'Pinjaman ' + (x.dari_proyek || 'Kas perusahaan') + ' → ' + x.ke_proyek + ' sisa ' + rp(x.sisa) + (x.lewat ? ' lewat rencana kembali' : ' rencana kembali'),
+        '#proyek-' + ((d.proyek || []).find((p) => p.kode === x.ke_proyek)?.id || ''));
+    }
+    if (boleh('hutang_supplier')) for (const x of d.pembelian || []) if (x.cara_bayar === 'tempo' && x.sisa > 0) {
+      tambah('hutang_supplier', x.id, x.jatuh_tempo, 'Hutang ' + x.supplier_nama + (x.no_nota ? ' ' + x.no_nota : '') + ' ' + rp(x.sisa) + (x.jatuh_tempo < today ? ' lewat jatuh tempo' : ' jatuh tempo'), '#pembelian-' + x.id);
     }
   }
   return hasil.sort((a, b) => a.tanggal.localeCompare(b.tanggal));

@@ -52,6 +52,9 @@ a { color: var(--aksen); }
 .ubin { background: var(--panel); border: 1px solid var(--garis); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ubin-label, .ubin-kaki { color: var(--redup); font-size: .85rem; }
 .ubin-nilai { font-size: 1.6rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.2; }
+.ubin-buruk { border-color: var(--buruk); } .ubin-buruk .ubin-nilai { color: var(--buruk); }
+.dua-kolom { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 16px; }
+.dua-kolom > * { min-width: 0; }
 
 .bagan { display: flex; flex-direction: column; gap: 12px; }
 .bagan-baris { display: flex; flex-direction: column; gap: 4px; }

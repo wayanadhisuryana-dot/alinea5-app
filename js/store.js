@@ -57,7 +57,14 @@ function storeLokal() {
     async init() {
       try { records = JSON.parse(localStorage.getItem(KUNCI_LOKAL) || '[]'); } catch { records = []; }
       // Daftar kode proyek dibaca saat dipakai (records sudah termuat).
-      this.keu = mesinLokal({email: this.user.email, hariIni, proyek: () => records.filter((r) => r.tabel === 'proyek').map((r) => r.data.kode)});
+      this.keu = mesinLokal({email: this.user.email, hariIni, proyek: () => records.filter((r) => r.tabel === 'proyek').map((r) => r.data.kode),
+        master: () => records,
+        // Riwayat harga otomatis dari Pembelian / Kontrak vendor (Tahap 4): baris lama transaksi yang sama diganti.
+        tulisHarga: async (sid, rows) => {
+          records = records.filter((r) => !(r.tabel === 'harga' && r.data.sumber_id === sid))
+            .concat(rows.map((d) => ({id: idBaru(), tabel: 'harga', data: {...d, sumber_id: sid}, updated_at: new Date().toISOString()})));
+          tulis();
+        }});
       return this.user;
     },
     async muat() { return records.map((r) => ({...r})); },

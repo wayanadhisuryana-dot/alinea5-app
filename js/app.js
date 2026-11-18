@@ -14,18 +14,26 @@ import {renderBarang, renderDetailBarang} from './barang.js';
 import {kotakCek, cekSemua, periksaIsian} from './cek.js';
 import {renderSdm, renderDetailPegawai} from './sdm.js';
 import {editorTimProyek, pilihAnggota, namaTimInternal} from './tim-proyek.js';
+import {renderPihakProyek, renderDetailPihak} from './pihak-proyek.js';
+import {renderPembelian, renderDetailPembelian} from './pembelian.js';
+import {renderDetailProyek} from './detail-proyek.js';
+import {ringkasTitipanDipinjamkan} from './dompet.js';
+import {bacaKeuangan} from './proyek-bersama.js';
 
 const akar = document.getElementById('app');
 
 // ---------- rute ----------
 const rute = () => (location.hash.replace(/^#/, '') || 'dashboard');
-const jumlahMenu = (m) => (m.tabel && S.db[m.tabel] ? S.db[m.tabel].filter((x) => x.aktif !== false && (m.tabel !== 'barang' || (x.jenis || 'barang') === 'barang')).length : m.k === 'kas' ? S.keu.rekening.filter((r) => r.aktif).length || null : m.k === 'kontrak' ? S.keu.kontrak_klien?.length || null : null);
+const jumlahMenu = (m) => (m.tabel && S.db[m.tabel] ? S.db[m.tabel].filter((x) => x.aktif !== false && (m.tabel !== 'barang' || (x.jenis || 'barang') === 'barang')).length : m.k === 'kas' ? S.keu.rekening.filter((r) => r.aktif).length || null : m.k === 'kontrak' ? S.keu.kontrak_klien?.length || null : m.k === 'pihak_proyek' ? S.keu.kontrak_vendor?.length || null : m.k === 'pembelian' ? S.keu.pembelian?.length || null : null);
 // Rute -> kunci menu yang disorot.
 function menuAktif(r) {
   if (r.startsWith('sdm-')) return 'sdm';
   if (r.startsWith('klien-')) return 'klien';
   if (r.startsWith('kas')) return 'kas';
   if (r.startsWith('kontrak')) return 'kontrak';
+  if (r.startsWith('pihak-proyek')) return 'pihak_proyek';
+  if (r.startsWith('pembelian')) return 'pembelian';
+  if (r.startsWith('proyek-')) return 'proyek';
   if (r.startsWith('piutang')) return 'termin';
   if (r.startsWith('barang')) return 'barang';
   if (r.startsWith('pengaturan')) return 'pengaturan';
@@ -73,6 +81,12 @@ function render() {
   else if (r.startsWith('kas-') && hak('kas')) renderMutasi(utama, r.slice(4));
   else if (r === 'jurnal' && hak('jurnal')) renderJurnal(utama);
   else if (r === 'kontrak' && hak('kontrak')) renderKontrak(utama);
+  else if (r === 'pihak-proyek' && hak('pihak_proyek')) renderPihakProyek(utama);
+  else if (r.startsWith('pihak-proyek-') && hak('pihak_proyek')) renderDetailPihak(utama, r.slice(13));
+  else if (r === 'pembelian' && hak('pembelian')) renderPembelian(utama);
+  else if (r.startsWith('pembelian-') && hak('pembelian')) renderDetailPembelian(utama, r.slice(10));
+  else if (r.startsWith('proyek-') && bolehAkses('proyek')) renderDetailProyek(utama, r.slice(7), {bukaForm});
+  else if (r === 't-vendor' || r === 'segera-pembelian') { history.replaceState(null, '', r === 't-vendor' ? '#pihak-proyek' : '#pembelian'); return render(); }
   else if (r.startsWith('kontrak-') && (hak('kontrak') || hak('termin'))) renderDetailKontrak(utama, r.slice(8));
   else if (r === 'piutang' && hak('termin')) renderPiutang(utama);
   else if (r.startsWith('piutang-') && hak('termin')) {
@@ -224,6 +238,7 @@ function renderDashboard(el) {
     el.append(h('section', {class: 'bagian'}, h('h2', null, 'Hutang dan kewajiban'),
       h('div', {class: 'ubin-grid'},
         ubin('Hutang ke vendor / tukang', rpRingkas(r.hutang_vendor), 'retensi ditahan ' + rpRingkas(r.retensi)),
+        ubin('Hutang supplier', rpRingkas(r.hutang_supplier || 0), 'pembelian tempo belum lunas'),
         ubin('Kewajiban lain', rpRingkas(r.hutang_lain), 'sisa di luar vendor proyek'),
         ubin('Gaji + tunjangan', rpRingkas(r.gaji_bulanan), 'per bulan'),
         ubin('Nilai buku aset', rpRingkas(r.nilai_buku_aset), 'perkiraan, garis lurus')),
@@ -251,7 +266,11 @@ const urutkan = (rows, urut) => {
 };
 
 function renderTabel(el, nama) {
-  const def = TABEL[nama];
+  const def0 = TABEL[nama];
+  // Tahap 4: daftar proyek menampilkan saldo dompet (bagi yang boleh membaca keuangan proyek).
+  const dompetTampil = nama === 'proyek' && bacaKeuangan() && S.keu.siap && S.keu.proyek_siap !== false;
+  const def = dompetTampil ? {...def0, kolom: [...def0.kolom, ['saldo_dompet', 'Saldo dompet', 'uang']]} : def0;
+  const baris = (r) => (dompetTampil ? {...r, saldo_dompet: S.d.dompet[r.kode]?.saldo ?? null} : r);
   const adaProyek = def.isian.some((f) => f.t === 'proyek');
   const badan = h('tbody');
   const hitungan = h('span', {class: 'redup kecil'});
@@ -261,8 +280,8 @@ function renderTabel(el, nama) {
     if (adaProyek && S.filterProyek) rows = rows.filter((r) => r.kode === S.filterProyek);
     if (q) rows = rows.filter((r) => def.kolom.some(([k]) => String(r[k] ?? '').toLowerCase().includes(q)) || def.isian.some((f) => String(r[f.k] ?? '').toLowerCase().includes(q)));
     hitungan.textContent = rows.length + ' dari ' + S.d[nama].length + ' ' + def.satuan;
-    badan.replaceChildren(...(rows.length ? rows.map((r) => {
-      const buka = () => bukaForm(nama, S.db[nama].find((x) => x.id === r.id));
+    badan.replaceChildren(...(rows.length ? rows.map(baris).map((r) => {
+      const buka = nama === 'proyek' ? () => { location.hash = '#proyek-' + r.id; } : () => bukaForm(nama, S.db[nama].find((x) => x.id === r.id));
       return h('tr', {class: 'bisa-klik', tabindex: '0', onclick: buka, onkeydown: (ev) => { if (ev.key === 'Enter') buka(); }},
         def.kolom.map(([k, , f]) => h('td', {class: (RATA_KANAN.includes(f) ? 'kanan ' : '') + (f === 'lebar' ? 'lebar' : '')}, f && FORMAT[f] ? FORMAT[f](r[k]) : isi(r[k]))));
     }) : [h('tr', null, h('td', {colspan: String(def.kolom.length), class: 'redup'}, S.d[nama].length ? 'Tidak ada baris yang cocok dengan pencarian.' : 'Belum ada data. Klik Tambah untuk mengisi baris pertama.'))]));
@@ -275,20 +294,27 @@ function renderTabel(el, nama) {
   if (nama === 'kontrak') {
     S.tabKontrak = S.tabKontrak || 'klien';
     el.append(h('div', {class: 'tabs', role: 'tablist'}, [['klien', 'Klien'], ['vendor', 'Vendor']].map(([k, l]) => h('button', {class: 'tab', type: 'button', role: 'tab', 'aria-selected': String(S.tabKontrak === k), onclick: () => { S.tabKontrak = k; render(); }}, l))));
-    if (S.tabKontrak === 'vendor') {
-      el.append(h('div', {class: 'kartu kosong-ajakan'}, h('h2', null, 'Dalam pengembangan'), h('p', null, 'Kontrak vendor akan tersedia pada tahap berikutnya.')));
-      return;
-    }
+    if (S.tabKontrak === 'vendor') { history.replaceState(null, '', '#kontrak'); return render(); }
   }
   el.append(
     h('div', {class: 'alat'}, cari, saring, hitungan, h('span', {class: 'pegas'}),
       nama === 'tahap' && bolehUbahTabel('tahap') && h('button', {class: 'btn', type: 'button', onclick: () => bukaTahapMassal()}, 'Tambah semua tahap proyek'),
       bolehUbahTabel(nama) && h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaForm(nama, null)}, 'Tambah ' + def.satuan)),
-    h('div', {class: 'gulir'}, h('table', {class: 'tabel'}, h('thead', null, h('tr', null, def.kolom.map(([, label, f]) => h('th', {class: RATA_KANAN.includes(f) ? 'kanan' : null}, label)))), badan)));
+    h('div', {class: 'gulir'}, h('table', {class: 'tabel'}, h('thead', null, h('tr', null, def.kolom.map(([, label, f]) => h('th', {class: RATA_KANAN.includes(f) ? 'kanan' : null}, label)))), badan)),
+    dompetTampil && ringkasTitipanDipinjamkan());
   gambar();
 }
 
 // ---------- formulir ----------
+// Proyek yang sudah dipakai data keuangan tidak boleh dihapus / diganti kodenya. Mengembalikan teks pemakainya, atau ''.
+function dipakaiKeuangan(kode) {
+  const K = S.keu, kk = S.d.kontrak.filter((k) => k.kode === kode);
+  return [kk.length && 'kontrak klien ' + kk.map((k) => k.no_kontrak).join(', '),
+    (K.kontrak_vendor || []).some((x) => x.proyek_kode === kode) && 'kontrak vendor',
+    (K.pembelian || []).some((x) => x.proyek_kode === kode) && 'pembelian material',
+    (K.pinjaman_proyek || []).some((x) => x.dari_proyek === kode || x.ke_proyek === kode) && 'pinjaman antar proyek',
+    (K.kas_transaksi || []).some((x) => x.proyek_kode === kode) && 'transaksi kas'].filter(Boolean).join(', ');
+}
 const nilaiUnik = (tabel, k) => [...new Set((S.db[tabel] || []).map((r) => r[k]).filter((v) => !kosong(v)))].sort((a, b) => String(a).localeCompare(String(b), 'id'));
 const pilihan = (id, daftar, nilai, wajib) => {
   const semua = kosong(nilai) || daftar.some((o) => o[0] === nilai) ? daftar : daftar.concat([[nilai, nilai + ' (tidak ada di daftar)']]);
@@ -327,12 +353,12 @@ function bacaMasukan(f, form) {
   return v;
 }
 
-function bukaForm(tabel, baris) {
+function bukaForm(tabel, baris, awal = null) {
   const def = TABEL[tabel];
   const galat = h('p', {class: 'form-galat', role: 'alert'});
   let dlg, yakin = false;
   const hapus = baris && h('button', {class: 'btn btn-bahaya', type: 'button', onclick: aman(async () => {
-    if (tabel === 'proyek' && S.d.kontrak.some((k) => k.kode === baris.kode)) throw new Error('Proyek ' + baris.kode + ' sudah punya kontrak klien, jadi tidak bisa dihapus.');
+    if (tabel === 'proyek' && dipakaiKeuangan(baris.kode)) throw new Error('Proyek ' + baris.kode + ' sudah dipakai ' + dipakaiKeuangan(baris.kode) + ', jadi tidak bisa dihapus.');
     if (!yakin) { yakin = true; hapus.textContent = 'Klik lagi untuk menghapus'; return; }
     await store.hapus(baris.id);
     await muatData(); dlg.close(); render(); pesan(def.label + ': baris dihapus.');
@@ -362,8 +388,8 @@ function bukaForm(tabel, baris) {
         return;
       }
     }
-    if (tabel === 'proyek' && baris && data.kode !== baris.kode && S.d.kontrak.some((k) => k.kode === baris.kode)) {
-      galat.textContent = 'Kode proyek tidak bisa diubah karena sudah dipakai kontrak klien ' + S.d.kontrak.filter((k) => k.kode === baris.kode).map((k) => k.no_kontrak).join(', ') + '.';
+    if (tabel === 'proyek' && baris && data.kode !== baris.kode && dipakaiKeuangan(baris.kode)) {
+      galat.textContent = 'Kode proyek tidak bisa diubah karena sudah dipakai ' + dipakaiKeuangan(baris.kode) + '.';
       return;
     }
     simpan.disabled = true; simpan.textContent = 'Menyimpan…';
@@ -374,7 +400,7 @@ function bukaForm(tabel, baris) {
   }},
     h('div', {class: 'form-grid'}, def.isian.map((f) => h('div', {class: 'medan' + (['catatan', 'timproyek'].includes(f.t) ? ' medan-lebar' : '')},
       h('label', {for: f.t === 'timproyek' ? 'f-tim-orang' : 'f-' + f.k}, f.label, f.wajib && h('span', {class: 'wajib', title: 'Wajib diisi'}, ' *')),
-      buatMasukan(f, f.t === 'klien' ? S.d[tabel].find((x) => x.id === baris?.id)?.klien_ref : baris?.[f.k], tabel, ctx),
+      buatMasukan(f, f.t === 'klien' ? S.d[tabel].find((x) => x.id === baris?.id)?.klien_ref : baris ? baris[f.k] : awal?.[f.k], tabel, ctx),
       f.bantuan && !['hp', 'email', 'npwp'].includes(f.t) && h('span', {class: 'kecil redup'}, f.bantuan)))),
     tabel === 'proyek' && baris && (hak('kontrak') != null) && kontrakProyek(baris.kode),
     galat,
