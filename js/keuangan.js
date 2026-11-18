@@ -3,8 +3,9 @@ import {S, segarkanKeuangan} from './state.js';
 import {store, BUCKET_BUKTI, idBaru} from './store.js';
 import {hariIni} from './calc.js';
 import {bisaUbah, khusus} from './akses.js';
-import {h, idn, rp, tgl, isi, pill, pesan, aman, dialog, formatUang, bacaUang, ukuranFile, pilihCari, kepalaUrut, bandingkan, sambilMenyimpan} from './ui.js';
-import {eksporExcel} from './excel.js';
+import {h, idn, rp, tgl, isi, pill, pesan, aman, dialog, formatUang, bacaUang, ukuranFile, pilihCari, kepalaUrut, bandingkan, sambilMenyimpan, unduh} from './ui.js';
+import {eksporExcel, muatExcelJS} from './excel.js';
+import {buatWorkbook, bacaWorkbook, evaluasiRekening, evaluasiKas, rekeningKeBaris, kasKeBaris, JENIS_IMPOR} from './keuangan-excel.js';
 import {
   JENIS_REKENING, SUMBER_JURNAL, GOLONGAN, akunRekening, akunTransaksi, terkunci, mutasiRekening, saldoRekening, daftarJurnal,
   bulanDari, namaBulan,
@@ -100,7 +101,8 @@ export function renderKas(el) {
   if (!rek.length) {
     el.append(h('div', {class: 'kartu kosong-ajakan'}, h('h2', null, 'Belum ada rekening'),
       h('p', null, 'Tambahkan rekening bank dan kas tunai perusahaan beserta saldo awalnya. Setiap rekening otomatis menjadi sub-akun Kas dan Setara Kas di Bagan Akun.'),
-      bisaKas() && h('div', {class: 'baris-tombol tengah-isi'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormRekening(null)}, '+ Tambah rekening pertama'))));
+      bisaKas() && h('div', {class: 'baris-tombol tengah-isi'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormRekening(null)}, '+ Tambah rekening pertama'),
+        ...tombolExcel('rekening', {ekspor: false}))));
     return;
   }
   const total = aktif.reduce((s, r) => s + saldoRekening(K(), r.id), 0);
@@ -129,7 +131,81 @@ export function tabelRekening(rek) {
       h('td', null, r.utama_invoice ? pill('Utama') : r.di_invoice ? 'Tampil' : '—'), h('td', null, pill(r.aktif ? 'Aktif' : 'Nonaktif')))))));
 }
 function panelRekening(panel, rek) {
-  panel.append(h('p', {class: 'kecil redup'}, 'Klik baris untuk mengubah. Rekening yang sudah dipakai transaksi tidak bisa dihapus, hanya dinonaktifkan.'), tabelRekening(rek));
+  panel.append(h('div', {class: 'alat'}, h('span', {class: 'kecil redup'}, 'Klik baris untuk mengubah. Rekening yang sudah dipakai transaksi tidak bisa dihapus, hanya dinonaktifkan.'),
+    h('span', {class: 'pegas'}), ...tombolExcel('rekening')), tabelRekening(rek));
+}
+
+// ---------- Excel: ekspor, template, impor dengan pratinjau ----------
+async function unduhWorkbook(wb, nama) {
+  unduh(nama, new Blob([await wb.xlsx.writeBuffer()], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+}
+function tombolExcel(jenis, {ekspor = true, baris} = {}) {
+  const berkas = h('input', {type: 'file', accept: '.xlsx', hidden: true, 'aria-label': 'File Excel ' + JENIS_IMPOR[jenis].nama, onchange: aman(async () => {
+    const f = berkas.files[0];
+    berkas.value = '';
+    if (!f) return;
+    pesan('Membaca ' + f.name + '…');
+    const isiFile = await bacaWorkbook(await muatExcelJS(), jenis, await f.arrayBuffer());
+    await segarkanKeuangan();
+    bukaPratinjauImpor(jenis, isiFile);
+  })});
+  return [
+    ekspor && h('button', {class: 'btn', type: 'button', onclick: aman(async () => {
+      const data = baris ? baris() : jenis === 'rekening' ? K().rekening.map(rekeningKeBaris) : K().kas_transaksi.map((k) => kasKeBaris(K(), k));
+      await unduhWorkbook(buatWorkbook(await muatExcelJS(), jenis, data, {K: K()}), (jenis === 'rekening' ? 'rekening-' : 'kas-umum-') + hariIni() + '.xlsx');
+    })}, 'Ekspor Excel'),
+    h('button', {class: 'btn', type: 'button', onclick: aman(async () => {
+      await unduhWorkbook(buatWorkbook(await muatExcelJS(), jenis, [], {contoh: true, K: K()}), 'template-' + (jenis === 'rekening' ? 'rekening' : 'kas-umum') + '.xlsx');
+    })}, 'Unduh Template'),
+    bisaKas() && h('button', {class: 'btn', type: 'button', onclick: () => berkas.click()}, 'Impor Excel'), bisaKas() && berkas,
+  ].filter(Boolean);
+}
+
+function bukaPratinjauImpor(jenis, isiFile) {
+  const rekening = jenis === 'rekening';
+  const hasil = rekening ? evaluasiRekening(isiFile, K()) : evaluasiKas(isiFile, K(), S.db.proyek.map((p) => p.kode).filter(Boolean));
+  const error = hasil.filter((r) => r.status === 'error'), dup = hasil.filter((r) => r.status === 'duplikat'), siap = hasil.filter((r) => r.status === 'siap');
+  const akanSimpan = () => siap.concat(dup.filter((r) => r.aksi === 'simpan'));
+  const satuan = rekening ? ' rekening' : ' transaksi';
+  const galat = h('p', {class: 'form-galat', role: 'alert'});
+  const tombol = h('button', {class: 'btn btn-utama', type: 'button'});
+  let dlg, yakin = false;
+  const segarTombol = () => { yakin = false; tombol.textContent = 'Simpan ' + akanSimpan().length + satuan; tombol.disabled = !akanSimpan().length; };
+  tombol.addEventListener('click', aman(async () => {
+    if (!yakin) { yakin = true; tombol.textContent = 'Klik lagi untuk menyimpan ' + akanSimpan().length + satuan; return; }
+    galat.textContent = '';
+    const daftar = akanSimpan().sort((a, b) => a.no - b.no).map((r) => ({...r.data, __no: r.no}));
+    try {
+      await sambilMenyimpan(tombol, () => (rekening ? store.keu.imporRekening(daftar) : store.keu.imporKas(daftar)));
+    } catch (e) {
+      galat.textContent = 'Tidak ada yang tersimpan. ' + e.message; segarTombol(); await segarkanKeuangan(); return;
+    }
+    dlg.close(); await segarkanKeuangan();
+    pesan('Impor selesai: ' + daftar.length + satuan + ' tersimpan dan dijurnal otomatis.');
+  }));
+  const tabel = (judul, kepala, rows) => rows.length ? [h('h3', null, judul), h('div', {class: 'gulir gulir-pendek'}, h('table', {class: 'tabel'}, h('thead', null, h('tr', null, kepala.map((x) => h('th', null, x)))), h('tbody', null, rows)))] : null;
+  const ringkas = (r) => rekening
+    ? [h('td', null, r.data.nama || isi(r.nilai.nama)), h('td', null, isi(r.data.jenis)), h('td', {class: 'kanan'}, Number.isInteger(r.data.saldo_awal) ? rp(r.data.saldo_awal) : '—'), h('td', null, r.data.tgl_saldo_awal ? tgl(r.data.tgl_saldo_awal) : '—')]
+    : [h('td', null, r.data.tanggal ? tgl(r.data.tanggal) : '—'), h('td', null, r.data.jenis === 'masuk' ? 'Pemasukan' : r.data.jenis === 'keluar' ? 'Pengeluaran' : '—'), h('td', null, isi(r.rekening)), h('td', null, isi(r.akun)),
+      h('td', {class: 'lebar'}, isi(r.data.uraian)), h('td', {class: 'kanan'}, Number.isInteger(r.data.jumlah) ? rp(r.data.jumlah) : '—')];
+  const kepala = rekening ? ['Nama', 'Jenis', 'Saldo awal', 'Tgl saldo awal'] : ['Tanggal', 'Jenis', 'Rekening', 'Akun', 'Uraian', 'Jumlah'];
+  const pilihAksi = (r) => (r.bolehSimpanJuga
+    ? h('select', {'aria-label': 'Tindakan untuk baris ' + r.no, onchange: (ev) => { r.aksi = ev.target.value; segarTombol(); }}, [['lewati', 'Lewati'], ['simpan', 'Tetap simpan']].map(([v, l]) => h('option', {value: v}, l)))
+    : 'Dilewati');
+  const total = (rows) => rows.reduce((s, r) => s + (rekening ? r.data.saldo_awal : r.data.jumlah), 0);
+  segarTombol();
+  dlg = dialog('Pratinjau impor ' + JENIS_IMPOR[jenis].nama, h('div', {class: 'form'},
+    h('p', null, h('b', null, siap.length + ' baris siap, ' + error.length + ' baris error, ' + dup.length + ' baris duplikat.'), ' Belum ada yang disimpan.'),
+    !hasil.length && h('p', {class: 'redup'}, 'File tidak berisi baris data (baris contoh diabaikan).'),
+    tabel('Baris error (tidak ikut disimpan)', ['Baris', 'Masalah'], error.map((r) => h('tr', null, h('td', null, String(r.no)), h('td', null, r.galat.map((g) => h('div', null, g.kolom + ': ' + g.pesan)))))),
+    error.length > 0 && h('div', null, h('button', {class: 'btn btn-kecil', type: 'button', onclick: aman(async () => {
+      await unduhWorkbook(buatWorkbook(await muatExcelJS(), jenis, error.map((r) => r.nilai), {galat: error.map((r) => r.galat.map((g) => g.kolom + ': ' + g.pesan).join('; ')), K: K()}), (rekening ? 'rekening' : 'kas-umum') + '-baris-error.xlsx');
+    })}, 'Unduh baris yang error'), h('span', {class: 'kecil redup'}, ' Perbaiki di file itu, lalu impor lagi.')),
+    tabel('Baris duplikat', ['Baris', ...kepala, 'Duplikat karena', 'Tindakan'], dup.map((r) => h('tr', null, h('td', null, String(r.no)), ...ringkas(r), h('td', null, r.alasan), h('td', null, pilihAksi(r))))),
+    tabel('Baris siap disimpan · total ' + rp(total(siap)), ['Baris', ...kepala], siap.map((r) => h('tr', null, h('td', null, String(r.no)), ...ringkas(r)))),
+    siap.length > 0 && h('p', {class: 'kecil redup'}, rekening ? 'Setiap rekening otomatis menjadi sub-akun 1-1-xx dan saldo awalnya dijurnal ke 3-2-01 Ekuitas saldo awal.' : 'Setiap transaksi otomatis dijurnal: pengeluaran D akun / K rekening, pemasukan D rekening / K akun.'),
+    galat,
+    h('div', {class: 'form-kaki'}, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, 'Batal'), tombol)));
 }
 
 function panelKasUmum(panel) {
@@ -158,10 +234,7 @@ function panelKasUmum(panel) {
       pilihan('saring-jenis', [['', 'Semua jenis'], ['masuk', 'Pemasukan'], ['keluar', 'Pengeluaran']], sr.jenis, {'aria-label': 'Saring jenis', onchange: (ev) => { sr.jenis = ev.target.value; gambar(); }}),
       pilihan('saring-bulan', [['', 'Semua bulan'], ...bulanAda.map((b) => [b, namaBulan(b)])], sr.bulan, {'aria-label': 'Saring bulan', onchange: (ev) => { sr.bulan = ev.target.value; gambar(); }}),
       hitungan, h('span', {class: 'pegas'}),
-      h('button', {class: 'btn', type: 'button', onclick: aman(() => eksporExcel('kas-umum-' + hariIni() + '.xlsx', [{nama: 'Kas umum', kolom: [
-        {judul: 'Tanggal', k: 'tanggal'}, {judul: 'Jenis', k: 'jenis_teks'}, {judul: 'Rekening', k: 'rekening', lebar: 24}, {judul: 'Akun', k: 'akun', lebar: 34},
-        {judul: 'Proyek', k: 'proyek_kode'}, {judul: 'Pihak', k: 'pihak', lebar: 22}, {judul: 'Uraian', k: 'uraian', lebar: 40}, {judul: 'Jumlah', k: 'jumlah', jenis: 'uang', lebar: 16}],
-      baris: baris().sort((a, b) => bandingkan(a.tanggal, b.tanggal)).map((k) => ({...k, jenis_teks: k.jenis === 'masuk' ? 'Pemasukan' : 'Pengeluaran'}))}]))}, 'Ekspor Excel')),
+      ...tombolExcel('kas', {baris: () => K().kas_transaksi.slice().sort((a, b) => bandingkan(a.tanggal, b.tanggal)).map((k) => kasKeBaris(K(), k))})),
     h('div', {class: 'gulir'}, tabel));
   gambar();
 }

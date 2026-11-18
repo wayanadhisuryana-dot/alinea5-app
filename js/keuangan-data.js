@@ -242,6 +242,7 @@ export function mesinLokal({email = 'Mode demo', hariIni}) {
     const lama = id ? s.rekening.find((r) => r.id === id) : null;
     if (id && !lama) throw new Error('Rekening tidak ditemukan.');
     const r = {...(lama || {id: idBaru(), dibuat: sekarang(), mata_uang: 'IDR', di_invoice: false, utama_invoice: false, aktif: true}), ...d};
+    delete r.__no;
     if (!String(r.nama || '').trim()) throw new Error('Nama akun rekening wajib diisi.');
     if (s.rekening.some((x) => x.id !== r.id && x.nama.toLowerCase() === r.nama.trim().toLowerCase())) throw new Error('Nama rekening "' + r.nama + '" sudah dipakai.');
     if (!JENIS_REKENING.includes(r.jenis)) throw new Error('Jenis rekening wajib dipilih.');
@@ -272,6 +273,20 @@ export function mesinLokal({email = 'Mode demo', hariIni}) {
     k.jumlah = bulat(k.jumlah, 'Jumlah', {min: 1});
     if (!String(k.uraian || '').trim()) throw new Error('Uraian wajib diisi.');
   };
+  const simpanKasDi = (s, id, d) => {
+    const lama = id ? s.kas_transaksi.find((x) => x.id === id) : null;
+    const k = {...(lama || {id: idBaru(), dibuat: sekarang(), dibuat_oleh: email}), ...d};
+    delete k.__no;
+    periksaKas(s, k);
+    if (lama) cekBuka(s, lama.tanggal);
+    cekBuka(s, k.tanggal);
+    const salin = lama && {...lama};
+    if (lama) Object.assign(lama, k); else s.kas_transaksi.push(k);
+    audit(s, 'kas_transaksi', lama ? 'update' : 'insert', salin, {...k});
+    jurnalOtomatis(s, 'kas', k.id, k.tanggal, k.uraian, [{jenis: k.jenis === 'masuk' ? 'kas_masuk' : 'kas_keluar', jumlah: k.jumlah}],
+      {REKENING: akunRekening(s, k.rekening_id).id, AKUN_DIPILIH: k.akun_id}, k.proyek_kode);
+    return k;
+  };
 
   return {
     mode: 'lokal',
@@ -295,21 +310,10 @@ export function mesinLokal({email = 'Mode demo', hariIni}) {
         if (akun) { s.akun = s.akun.filter((x) => x.id !== akun.id); audit(s, 'akun', 'delete', akun, null); }
       });
     },
-    async simpanKas(id, d) {
-      return ubah((s) => {
-        const lama = id ? s.kas_transaksi.find((x) => x.id === id) : null;
-        const k = {...(lama || {id: idBaru(), dibuat: sekarang(), dibuat_oleh: email}), ...d};
-        periksaKas(s, k);
-        if (lama) cekBuka(s, lama.tanggal);
-        cekBuka(s, k.tanggal);
-        const salin = lama && {...lama};
-        if (lama) Object.assign(lama, k); else s.kas_transaksi.push(k);
-        audit(s, 'kas_transaksi', lama ? 'update' : 'insert', salin, {...k});
-        jurnalOtomatis(s, 'kas', k.id, k.tanggal, k.uraian, [{jenis: k.jenis === 'masuk' ? 'kas_masuk' : 'kas_keluar', jumlah: k.jumlah}],
-          {REKENING: akunRekening(s, k.rekening_id).id, AKUN_DIPILIH: k.akun_id}, k.proyek_kode);
-        return k;
-      });
-    },
+    async simpanKas(id, d) { return ubah((s) => simpanKasDi(s, id, d)); },
+    // Impor Excel: semua baris tersimpan bersama, atau tidak ada sama sekali bila satu baris ditolak.
+    async imporRekening(daftar) { return ubah((s) => daftar.map((d, i) => { try { return simpanRekeningDi(s, null, d); } catch (e) { throw new Error('Baris ' + (d.__no ?? i + 1) + ': ' + e.message); } })); },
+    async imporKas(daftar) { return ubah((s) => daftar.map((d, i) => { try { return simpanKasDi(s, null, d); } catch (e) { throw new Error('Baris ' + (d.__no ?? i + 1) + ': ' + e.message); } })); },
     async hapusKas(id) {
       return ubah((s) => {
         const k = s.kas_transaksi.find((x) => x.id === id);
@@ -521,6 +525,9 @@ export function mesinSupabase(sb) {
     async simpanRekening(id, d) { return tulisBaris('rekening', id, d); },
     async hapusRekening(id) { cek(await sb.from('rekening').delete().eq('id', id)); },
     async simpanKas(id, d) { return tulisBaris('kas_transaksi', id, d); },
+    // Satu perintah insert = satu transaksi database: bila satu baris ditolak, tidak ada yang tersimpan.
+    async imporRekening(daftar) { return cek(await sb.from('rekening').insert(daftar.map(({__no, ...d}) => d)).select()); },
+    async imporKas(daftar) { return cek(await sb.from('kas_transaksi').insert(daftar.map(({__no, ...d}) => d)).select()); },
     async hapusKas(id) { cek(await sb.from('kas_transaksi').delete().eq('id', id)); },
     async simpanTransfer(id, d) { return tulisBaris('transfer', id, d); },
     async hapusTransfer(id) { cek(await sb.from('transfer').delete().eq('id', id)); },
