@@ -182,7 +182,7 @@ export const TABEL = {
     kolom: [['kode', 'Kode'], ['nama_proyek', 'Proyek'], ['termin_ke', 'Ke', 'angka'], ['milestone', 'Milestone'], ['nilai', 'Nilai tagihan', 'uang'], ['no_invoice', 'No. invoice'], ['jatuh_tempo', 'Jatuh tempo', 'tanggal'], ['diterima', 'Diterima', 'uang'], ['sisa', 'Sisa', 'uang'], ['status', 'Status', 'pill'], ['umur', 'Umur (hari)', 'angka']],
   },
   vendor: {
-    label: 'Vendor & Tukang', satuan: 'vendor', grup: 'Keuangan', akses: 'admin', urut: ['kode', 'vendor'],
+    label: 'Pihak Proyek', satuan: 'pihak proyek', grup: 'Keuangan', akses: 'admin', urut: ['kode', 'vendor'],
     bantuan: 'Satu baris per vendor per proyek. Uang material/tukang dari klien (turn-key) adalah dana titipan, bukan pendapatan: tandai di Sumber dana.',
     isian: [
       {k: 'kode', label: 'Proyek', t: 'proyek', wajib: true},

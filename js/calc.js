@@ -92,7 +92,7 @@ export function hitung(db, today = hariIni(), atur = {}) {
     return {...h, sisa, alert};
   });
 
-  const {jabatan, param} = aturSdm(atur);
+  const {jabatan, param, skk: modulSkk} = aturSdm(atur);
   const sdm = t('sdm').map((s) => {
     const jab = cariJabatan(s, jabatan);
     const kontrak = kontrakDari(s), akhir = kontrak.at(-1);
@@ -105,7 +105,7 @@ export function hitung(db, today = hariIni(), atur = {}) {
     })));
     return {
       ...s, aktif: keluar ? 'Keluar' : 'Aktif',
-      jabatan_id: jab?.id ?? s.jabatan_id ?? null, jabatan_nama: jab?.nama || '', perlu_skk: !!jab?.skk || !!s.skk_no || !!s.no_skk,
+      jabatan_id: jab?.id ?? s.jabatan_id ?? null, jabatan_nama: jab?.nama || '', perlu_skk: modulSkk && (!!jab?.skk || !!s.skk_no || !!s.no_skk),
       skk_no: s.skk_no ?? s.no_skk, status_pendek: STATUS_PENDEK[s.status] || s.status || '',
       tim_proyek: s.tim_proyek ?? bawaanTimProyek(jab?.id),
       kontrak_list: kontrak, dokumen_list: dokumenDari(s), gaji_list: gajiDari(s), gaji_saat_ini: gaji, gaji_total: totalGaji(gaji),

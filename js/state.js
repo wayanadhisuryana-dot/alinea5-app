@@ -3,11 +3,15 @@ import {NAMA_TABEL, terapkanOpsi} from './schema.js';
 import {hitung, hariIni, aturZona} from './calc.js';
 import {store} from './store.js';
 import {entriDirektori} from './sdm-util.js';
+import {bisaUbah} from './akses.js';
 
 // db: data mentah per tabel; d: data + kolom hitungan; render: diisi oleh app.js.
 export const S = {
   db: {}, d: null, user: null, cari: '', filterProyek: '', urutKlien: {k: 'nama', arah: 1}, pengaturan: null, render: () => {},
   urutSdm: {k: 'nama', arah: 1}, saringSdm: {aktif: 'Aktif', status: '', peringatan: false}, tabSdm: 'profil',
+  // keu: data keuangan (akun, rekening, jurnal, ...); profil: identitas perusahaan dan aplikasi.
+  keu: {siap: false, akun: [], rekening: [], kas_transaksi: [], transfer: [], jurnal: [], jurnal_baris: [], pemetaan_jurnal: [], tutup_buku: [], tutup_buku_riwayat: [], akuntansi: {}, perusahaan: {data: {}}, peran: []},
+  profil: {},
 };
 
 export async function muatData(sudahSinkron = false) {
@@ -16,10 +20,12 @@ export async function muatData(sudahSinkron = false) {
   for (const r of records) if (S.db[r.tabel]) S.db[r.tabel].push({...r.data, id: r.id});
   // Pengaturan aplikasi (pilihan dropdown, jabatan, parameter peringatan) disimpan sebagai satu catatan.
   S.pengaturan = records.find((r) => r.tabel === 'pengaturan') || null;
+  S.keu = await store.keu.muat();
+  S.profil = S.keu.perusahaan?.data || {};
   terapkanOpsi(S.pengaturan?.data?.opsi);
   aturZona(S.pengaturan?.data?.zona_waktu);
   S.d = hitung(S.db, hariIni(), S.pengaturan?.data);
-  if (!sudahSinkron && S.user?.role === 'admin' && await sinkronDirektori()) await muatData(true);
+  if (!sudahSinkron && bisaUbah('sdm') && await sinkronDirektori()) await muatData(true);
 }
 
 // Admin: menyamakan direktori orang (tabel 'tim', dibaca arsitek untuk Tim Proyek) dengan data SDM,
@@ -44,3 +50,5 @@ export const kosongNilai = (v) => v == null || v === '';
 // Baris -> isi yang disimpan: tanpa id dan tanpa kolom kosong.
 export const bersih = (data) => Object.fromEntries(Object.entries(data).filter(([k, v]) => k !== 'id' && !kosongNilai(v)));
 export async function segarkan() { await muatData(); S.render(); }
+// Hanya data keuangan (lebih cepat daripada memuat ulang semuanya).
+export async function segarkanKeuangan() { S.keu = await store.keu.muat(); S.profil = S.keu.perusahaan?.data || {}; S.render(); }

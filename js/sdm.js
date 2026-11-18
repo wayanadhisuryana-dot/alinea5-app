@@ -6,6 +6,7 @@ import {h, idn, rp, tgl, isi, pill, pesan, aman, dialog, formatUang, bacaUang, u
 import {kotakCek, cekSemua, periksaIsian} from './cek.js';
 import {hariIni} from './calc.js';
 import {OPSI} from './schema.js';
+import {bisaUbah} from './akses.js';
 import {
   STATUS, STATUS_KERJA, STATUS_PENDEK, ALASAN_KELUAR, BATAS_FILE, aturSdm, bawaanTimProyek, kontrakDari, dokumenDari, gajiDari,
   cekBatasPkwt, jatahHabis, namaKontrak, tambahHari, nikSama, namaMiripPegawai,
@@ -80,7 +81,7 @@ export function renderSdm(el) {
       saring('saring-status', 'Status kerja', sar.status, [['', 'Semua status kerja'], ...STATUS_KERJA.map((s) => [s, STATUS_PENDEK[s]])], (v) => { sar.status = v; }),
       h('label', {class: 'centang'}, h('input', {type: 'checkbox', id: 'saring-peringatan', checked: sar.peringatan, onchange: (ev) => { sar.peringatan = ev.target.checked; gambar(); }}), 'Hanya yang ada peringatan'),
       hitungan, h('span', {class: 'pegas'}),
-      h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormPegawai(null)}, 'Tambah pegawai')),
+      bisaUbah('sdm') && h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormPegawai(null)}, 'Tambah pegawai')),
     h('div', {class: 'gulir'}, h('table', {class: 'tabel tabel-sdm'}, h('thead', null, kepalaTabel), badan)));
   gambar();
 }
@@ -170,7 +171,7 @@ export function renderDetailPegawai(el, id) {
   };
   el.append(
     h('div', {class: 'kepala'}, kembali,
-      h('div', {class: 'judul-baris'}, h('h1', null, s.nama), h('span', {class: 'pegas'}), h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormPegawai(s.id)}, 'Ubah data')),
+      h('div', {class: 'judul-baris'}, h('h1', null, s.nama), h('span', {class: 'pegas'}), bisaUbah('sdm') && h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormPegawai(s.id)}, 'Ubah data')),
       h('p', {class: 'redup'}, [s.jabatan_nama, s.status, s.aktif === 'Keluar' ? 'Keluar' : 'Aktif', s.gaji_saat_ini && (magang ? 'Uang saku ' : 'Gaji + tunjangan ') + rp(s.gaji_total) + ' / bulan'].filter(Boolean).join(' · ')),
       s.peringatan.length > 0 && daftarPeringatan(s)),
     h('div', {class: 'tabs', role: 'tablist', 'aria-label': 'Bagian data pegawai'}, tombolTab),
@@ -388,7 +389,7 @@ export function bukaFormPegawai(id) {
     bagDokumen.hidden = !st;
     if (st === STATUS.pkwt && !barisKontrak.length) tambahKontrak({ke: 0, mulai: tglMasuk.value}, true);
     bantuBpjs.hidden = !magang;
-    bagSkk.hidden = !(jab?.skk || (!jab && (lama?.skk_no || lama?.no_skk)));
+    bagSkk.hidden = !atur().skk || !(jab?.skk || (!jab && (lama?.skk_no || lama?.no_skk)));
     mKeluar.forEach((m) => { m.hidden = selAktif.value !== 'Keluar'; });
     mAlasanLain.hidden = selAktif.value !== 'Keluar' || alasan.value !== 'Lainnya';
     if (!timDisentuh) centangTim.checked = bawaanTimProyek(selJabatan.value);

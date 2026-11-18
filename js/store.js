@@ -3,14 +3,19 @@
 //  - supabase : database bersama dengan login dan peran (admin / arsitek)
 import {SUPABASE_URL, SUPABASE_ANON_KEY} from './config.js';
 import {NAMA_TABEL} from './schema.js';
+import {mesinLokal, mesinSupabase} from './keuangan-data.js';
+import {bentukPengguna} from './akses.js';
+import {hariIni} from './calc.js';
 
 const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 const KUNCI_LOKAL = 'alinea5:records';
 export const idBaru = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
 const cek = ({data, error}) => { if (error) throw new Error(error.message); return data; };
 
-// File PDF (kontrak kerja, sertifikat). Mode demo menyimpannya di IndexedDB browser ini.
+// File: PDF SDM (kontrak kerja, sertifikat) di 'dokumen-sdm'; bukti keuangan (PDF/JPG/PNG) di 'bukti-keuangan'.
+// Mode demo menyimpannya di IndexedDB browser ini.
 const BUCKET = 'dokumen-sdm';
+export const BUCKET_BUKTI = 'bukti-keuangan';
 function bukaIdb() {
   return new Promise((ok, gagal) => {
     const r = indexedDB.open('alinea5-berkas', 1);
@@ -35,9 +40,11 @@ function storeLokal() {
   const tulis = () => localStorage.setItem(KUNCI_LOKAL, JSON.stringify(records));
   return {
     mode: 'lokal',
-    user: {email: 'Mode demo', role: 'admin', aktif: true},
+    user: {id: 'lokal', email: 'Mode demo', role: 'admin', aktif: true, super_admin: true, peran: null},
+    keu: null,
     async init() {
       try { records = JSON.parse(localStorage.getItem(KUNCI_LOKAL) || '[]'); } catch { records = []; }
+      this.keu = mesinLokal({email: this.user.email, hariIni});
       return this.user;
     },
     async muat() { return records.map((r) => ({...r})); },
@@ -54,7 +61,7 @@ function storeLokal() {
     },
     async tambahBanyak(rows) { return this.gantiTabel([], rows); },
     async unggah(path, file) { await idb('readwrite', (st) => st.put(file, path)); },
-    async urlBerkas(path) {
+    async urlBerkas(path) { // (satu tempat untuk semua bucket di mode demo)
       const b = await idb('readonly', (st) => st.get(path));
       if (!b) throw new Error('File tidak ditemukan di browser ini.');
       return URL.createObjectURL(b);
@@ -67,14 +74,17 @@ function storeSupabase() {
   let sb = null;
   const profil = async (user) => {
     const p = cek(await sb.from('profiles').select('*').eq('id', user.id).maybeSingle());
-    return {id: user.id, email: user.email, role: p?.role || 'arsitek', aktif: !!p?.aktif};
+    const peran = p?.peran_id ? (await sb.from('peran').select('id,nama,hak,khusus').eq('id', p.peran_id).maybeSingle()).data : null;
+    return bentukPengguna(user.id, user.email, p, peran);
   };
   return {
     mode: 'supabase',
     user: null,
+    keu: null,
     async init() {
       const {createClient} = await import(SUPABASE_JS);
       sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      this.keu = mesinSupabase(sb);
       const {data} = await sb.auth.getSession();
       this.user = data.session ? await profil(data.session.user) : null;
       return this.user;
@@ -109,18 +119,16 @@ function storeSupabase() {
       }
     },
     async tambahBanyak(rows) { return this.gantiTabel([], rows); },
-    async unggah(path, file) {
-      const {error} = await sb.storage.from(BUCKET).upload(path, file, {contentType: 'application/pdf', upsert: false});
+    async unggah(path, file, bucket = BUCKET) {
+      const {error} = await sb.storage.from(bucket).upload(path, file, {contentType: file.type || 'application/pdf', upsert: false});
       if (error) throw galatBerkas(error);
     },
-    async urlBerkas(path) {
-      const {data, error} = await sb.storage.from(BUCKET).createSignedUrl(path, 300);
+    async urlBerkas(path, bucket = BUCKET) {
+      const {data, error} = await sb.storage.from(bucket).createSignedUrl(path, 300);
       if (error) throw galatBerkas(error);
       return data.signedUrl;
     },
-    async hapusBerkas(paths) { if (paths.length) await sb.storage.from(BUCKET).remove(paths); },
-    async pengguna() { return cek(await sb.from('profiles').select('id,email,role,aktif,created_at').order('email')); },
-    async aturPengguna(id, perubahan) { cek(await sb.from('profiles').update(perubahan).eq('id', id)); },
+    async hapusBerkas(paths, bucket = BUCKET) { if (paths.length) await sb.storage.from(bucket).remove(paths); },
   };
 }
 

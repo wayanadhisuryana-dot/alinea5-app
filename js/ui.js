@@ -110,7 +110,74 @@ export function dialog(judul, isiDialog) {
   const dlg = h('dialog', {class: 'dialog'}, h('h2', null, judul), isiDialog);
   buangTeksPalsu(dlg);
   dlg.addEventListener('close', () => dlg.remove());
+  // Dilepas dari halaman seketika saat ditutup, agar id isian tidak bentrok dengan dialog berikutnya.
+  dlg.close = (...a) => { HTMLDialogElement.prototype.close.apply(dlg, a); dlg.remove(); };
   document.body.append(dlg);
   dlg.showModal();
   return dlg;
 }
+
+// Dropdown dengan pencarian untuk data master. opsi: [{v, label, sub?, grup?}].
+// Nilai terpilih ada di input tersembunyi ber-id `id` (event 'change' dipicu di sana); teks yang diketik hanya untuk mencari.
+export function pilihCari(id, opsi, nilai, {wajib = false, placeholder = 'Ketik untuk mencari, lalu pilih dari daftar', label = 'Cari', kosongTeks = 'Tidak ada yang cocok.', batas = 60} = {}) {
+  const labelDari = (v) => opsi.find((o) => o.v === v)?.label || '';
+  const nilaiEl = h('input', {type: 'hidden', id, value: nilai || ''});
+  const cari = h('input', {id: id + '-cari', type: 'text', placeholder, autocomplete: 'off', role: 'combobox', 'aria-expanded': 'false', 'aria-controls': id + '-daftar', 'aria-label': label});
+  const daftar = h('div', {class: 'kombo-daftar', id: id + '-daftar', role: 'listbox', hidden: true});
+  const wadah = h('div', {class: 'kombo'}, nilaiEl, cari, daftar);
+  const tutup = () => { daftar.hidden = true; cari.setAttribute('aria-expanded', 'false'); };
+  const pilih = (v) => {
+    const berubah = nilaiEl.value !== (v || '');
+    nilaiEl.value = v || ''; cari.value = labelDari(v); tutup();
+    if (berubah) nilaiEl.dispatchEvent(new Event('change'));
+  };
+  const tahan = (ev) => ev.preventDefault();
+  const buka = () => {
+    const q = cari.value.trim().toLowerCase(), terpilih = labelDari(nilaiEl.value).toLowerCase();
+    const cocok = opsi.filter((o) => !q || q === terpilih || (o.label + ' ' + (o.sub || '')).toLowerCase().includes(q)).slice(0, batas);
+    let grup = null;
+    const isiDaftar = [];
+    for (const o of cocok) {
+      if (o.grup && o.grup !== grup) { grup = o.grup; isiDaftar.push(h('div', {class: 'kombo-grup'}, grup)); }
+      isiDaftar.push(h('button', {class: 'kombo-opsi', type: 'button', role: 'option', 'aria-selected': String(o.v === nilaiEl.value), onmousedown: tahan, onclick: () => pilih(o.v)},
+        h('span', null, o.label), o.sub && h('span', {class: 'kecil redup'}, ' · ' + o.sub)));
+    }
+    if (!cocok.length) isiDaftar.push(h('div', {class: 'kombo-kosong redup'}, kosongTeks));
+    if (!wajib && nilaiEl.value) isiDaftar.push(h('button', {class: 'kombo-opsi redup', type: 'button', onmousedown: tahan, onclick: () => pilih('')}, 'Kosongkan pilihan'));
+    daftar.replaceChildren(...isiDaftar);
+    daftar.hidden = false; cari.setAttribute('aria-expanded', 'true');
+  };
+  nilaiEl.pilih = pilih;
+  cari.value = labelDari(nilai);
+  cari.addEventListener('focus', buka);
+  cari.addEventListener('input', buka);
+  cari.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && !daftar.hidden) { ev.preventDefault(); ev.stopPropagation(); tutup(); }
+    if (ev.key === 'Enter' && !daftar.hidden) { ev.preventDefault(); daftar.querySelector('.kombo-opsi')?.click(); }
+  });
+  cari.addEventListener('blur', () => setTimeout(() => { if (!wadah.contains(document.activeElement)) { if (!cari.value.trim() && !wajib) pilih(''); cari.value = labelDari(nilaiEl.value); tutup(); } }, 120));
+  return wadah;
+}
+
+// Mengunduh isi (Blob atau teks) sebagai file.
+export function unduh(namaFile, isiFile, tipe = 'application/json') {
+  const blob = isiFile instanceof Blob ? isiFile : new Blob([isiFile], {type: tipe});
+  const url = URL.createObjectURL(blob);
+  const a = h('a', {href: url, download: namaFile});
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Tombol Simpan: mati dan bertuliskan "Menyimpan…" selama proses.
+export async function sambilMenyimpan(tombol, fn) {
+  const teks = tombol.textContent;
+  tombol.disabled = true; tombol.textContent = 'Menyimpan…';
+  try { return await fn(); } finally { tombol.disabled = false; tombol.textContent = teks; }
+}
+
+// Kepala tabel yang bisa diurutkan. urut: {k, arah}; kolom: [[kunci, judul, kanan?]].
+export function kepalaUrut(kolom, urut, setelah) {
+  return h('thead', null, h('tr', null, kolom.map(([k, judul, kanan]) => h('th', {class: kanan ? 'kanan' : null, 'aria-sort': urut.k === k ? (urut.arah > 0 ? 'ascending' : 'descending') : null},
+    k ? h('button', {class: 'th-urut', type: 'button', onclick: () => { urut.arah = urut.k === k ? -urut.arah : 1; urut.k = k; setelah(); }}, judul, urut.k === k ? (urut.arah > 0 ? ' ▲' : ' ▼') : '') : judul))));
+}
+export const bandingkan = (a, b) => (typeof a === 'number' && typeof b === 'number' ? a - b : String(a ?? '').localeCompare(String(b ?? ''), 'id', {numeric: true}));

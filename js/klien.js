@@ -4,6 +4,7 @@ import {store} from './store.js';
 import {S, bersih, segarkan} from './state.js';
 import {h, idn, rpRingkas, tgl, isi, pill, pesan, aman, dialog} from './ui.js';
 import {hariIni} from './calc.js';
+import {hak, bisaUbah} from './akses.js';
 import {JENIS_KLIEN, SUMBER_KLIEN, validasiKlien, cariDuplikat, namaMirip, kontakDari, gabungKontak, isiYangKosong} from './klien-util.js';
 import {kotakCek, cekSemua} from './cek.js';
 import {buatWorkbook, bacaWorkbook, evaluasiImpor, klienKeBaris} from './klien-excel.js';
@@ -49,7 +50,7 @@ export function renderKlien(el) {
     if (!S.d.klien.length) {
       badan.replaceChildren(h('tr', null, h('td', {colspan: String(KOLOM.length + 1), class: 'kosong-tabel'},
         h('p', null, 'Belum ada klien. Klik Tambah klien atau Impor dari Excel.'),
-        h('div', {class: 'baris-tombol tengah-isi'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormKlien(null)}, 'Tambah klien'),
+        bisaUbah('klien') && h('div', {class: 'baris-tombol tengah-isi'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormKlien(null)}, 'Tambah klien'),
           h('button', {class: 'btn', type: 'button', onclick: () => pilihBerkas.click()}, 'Impor dari Excel')))));
       return;
     }
@@ -87,8 +88,8 @@ export function renderKlien(el) {
       h('button', {class: 'btn', type: 'button', onclick: () => bukaGabung()}, 'Gabung klien'),
       h('button', {class: 'btn', type: 'button', onclick: aman(async () => { await unduhWorkbook(buatWorkbook(await muatExcelJS(), tampil.map(klienKeBaris)), 'alinea5-klien-' + hariIni() + '.xlsx'); })}, 'Ekspor Excel'),
       h('button', {class: 'btn', type: 'button', onclick: aman(async () => { await unduhWorkbook(buatWorkbook(await muatExcelJS(), [], {contoh: true}), 'alinea5-template-klien.xlsx'); })}, 'Unduh Template'),
-      h('button', {class: 'btn', type: 'button', onclick: () => pilihBerkas.click()}, 'Impor Excel'), pilihBerkas,
-      h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormKlien(null)}, 'Tambah klien')),
+      bisaUbah('klien') && [h('button', {class: 'btn', type: 'button', onclick: () => pilihBerkas.click()}, 'Impor Excel'), pilihBerkas,
+        h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormKlien(null)}, 'Tambah klien')]),
     h('div', {class: 'gulir'}, h('table', {class: 'tabel'}, h('thead', null, kepalaTabel), badan)));
   gambar();
 }
@@ -110,7 +111,7 @@ export function renderDetailKlien(el, id) {
   const sumber = k.sumber === 'Referensi' && k.referensi_oleh ? 'Referensi: ' + k.referensi_oleh : k.sumber === 'Lainnya' && k.sumber_lain ? 'Lainnya: ' + k.sumber_lain : k.sumber;
   el.append(
     h('div', {class: 'kepala'}, kembali,
-      h('div', {class: 'judul-baris'}, h('h1', null, k.nama), h('span', {class: 'pegas'}), h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormKlien(k.id)}, 'Ubah data')),
+      h('div', {class: 'judul-baris'}, h('h1', null, k.nama), h('span', {class: 'pegas'}), bisaUbah('klien') && h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormKlien(k.id)}, 'Ubah data')),
       h('p', {class: 'redup'}, [k.jenis, k.status_klien, k.jml_proyek + ' proyek', k.total_kontrak ? 'total kontrak ' + rpRingkas(k.total_kontrak) : null, k.terakhir_aktif ? 'terakhir aktif ' + tgl(k.terakhir_aktif) : null].filter(Boolean).join(' · '))),
     h('section', {class: 'kartu'}, h('h2', null, 'Data klien'),
       rincian([['Jenis klien', k.jenis], ['Alamat penagihan', k.alamat], [k.jenis === 'Perorangan' ? 'NPWP / NIK' : 'NPWP', k.npwp], ['Sumber klien', sumber], ['Catatan', k.catatan]])),
@@ -121,7 +122,7 @@ export function renderDetailKlien(el, id) {
     h('section', {class: 'kartu'}, h('h2', null, 'Proyek'),
       tabelKecil([['Kode'], ['Proyek'], ['Status'], ['Mulai']], 'Belum ada proyek untuk klien ini.', proyek.map((p) => h('tr', null,
         h('td', {class: 'nw'}, p.kode), h('td', null, isi(p.nama)), h('td', null, pill(p.status)), h('td', {class: 'nw'}, tgl(p.mulai)))))),
-    S.user.role === 'admin' && h('section', {class: 'kartu'}, h('h2', null, 'Kontrak'),
+    hak('kontrak') != null && h('section', {class: 'kartu'}, h('h2', null, 'Kontrak'),
       tabelKecil([['Kode'], ['No. kontrak'], ['Tanggal'], ['Nilai total', 1], ['Diterima', 1], ['Piutang', 1]], 'Belum ada kontrak untuk klien ini.', kontrak.map((c) => h('tr', null,
         h('td', {class: 'nw'}, c.kode), h('td', null, isi(c.no_kontrak)), h('td', {class: 'nw'}, tgl(c.tgl_kontrak)),
         h('td', {class: 'kanan'}, rpRingkas(c.total)), h('td', {class: 'kanan'}, rpRingkas(c.diterima)), h('td', {class: 'kanan'}, rpRingkas(c.piutang)))))));

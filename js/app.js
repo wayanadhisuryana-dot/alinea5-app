@@ -1,48 +1,79 @@
-import {TABEL, OPSI, TAHAP, NAMA_TABEL, bolehAkses, OPSI_BISA_DIATUR, opsiBawaan, opsiSekarang} from './schema.js';
-import {ringkasan, temuan, hariIni, n, ZONA_WAKTU, zonaAktif} from './calc.js';
+import {TABEL, OPSI, TAHAP, NAMA_TABEL} from './schema.js';
+import {ringkasan, temuan, hariIni, n} from './calc.js';
 import {store} from './store.js';
-import {bacaExcel} from './import-excel.js';
 import {S, muatData, bersih} from './state.js';
 import {h, idn, rp, rpRingkas, persen, tgl, kosong, isi, pill, batangProgres, FORMAT, RATA_KANAN, pesan, aman, sekali, dialog, formatUang, buangTeksPalsu} from './ui.js';
+import {MENU, menuDari, menuTampil, hak, bisaUbah, bolehAkses, bolehUbahTabel, modulAktif, namaPeran} from './akses.js';
+import {renderKas, renderMutasi, renderJurnal} from './keuangan.js';
+import {renderPengaturan, NAMA_APLIKASI_BAWAAN, WARNA_BAWAAN, periksaCadanganOtomatis} from './pengaturan.js';
+import {lonceng, muatStatusNotifikasi, mulaiPemeriksaanHarian} from './notifikasi.js';
 import {renderKlien, renderDetailKlien, pilihKlien} from './klien.js';
 import {kotakCek, cekSemua, periksaIsian} from './cek.js';
 import {renderSdm, renderDetailPegawai} from './sdm.js';
 import {editorTimProyek, pilihAnggota, namaTimInternal} from './tim-proyek.js';
-import {aturSdm, PARAM_BAWAAN} from './sdm-util.js';
 
 const akar = document.getElementById('app');
 
 // ---------- rute ----------
 const rute = () => (location.hash.replace(/^#/, '') || 'dashboard');
-const tabelBoleh = () => NAMA_TABEL.filter((t) => bolehAkses(t, S.user.role));
-const tabelMenu = () => tabelBoleh().filter((t) => !TABEL[t].tersembunyi);
+const jumlahMenu = (m) => (m.tabel && S.db[m.tabel] ? S.db[m.tabel].length : m.k === 'kas' ? S.keu.rekening.filter((r) => r.aktif).length || null : null);
+// Rute -> kunci menu yang disorot.
+function menuAktif(r) {
+  if (r.startsWith('sdm-')) return 'sdm';
+  if (r.startsWith('klien-')) return 'klien';
+  if (r.startsWith('kas')) return 'kas';
+  if (r.startsWith('pengaturan')) return 'pengaturan';
+  return MENU.find((m) => m.ke === r)?.k || null;
+}
+
+// Identitas aplikasi dari Profil Perusahaan: nama, logo, warna aksen.
+export const identitas = () => ({nama: S.profil?.nama_aplikasi || S.identitas?.nama_aplikasi || NAMA_APLIKASI_BAWAAN,
+  badan: S.profil?.badan_hukum || S.identitas?.badan_hukum || '', logo: S.profil?.logo || S.identitas?.logo || 'assets/logo.svg',
+  warna: S.profil?.warna || S.identitas?.warna || WARNA_BAWAAN});
+function terapkanIdentitas() {
+  const i = identitas(), akar = document.documentElement.style;
+  document.title = i.nama + (i.badan ? ' · ' + i.badan : '');
+  if (i.warna && i.warna.toLowerCase() !== WARNA_BAWAAN) {
+    const gelap = matchMedia('(prefers-color-scheme: dark)').matches;
+    akar.setProperty('--aksen', gelap ? 'color-mix(in srgb, ' + i.warna + ' 60%, white)' : i.warna);
+    akar.setProperty('--aksen-lembut', 'color-mix(in srgb, ' + i.warna + (gelap ? ' 22%' : ' 12%') + ', var(--panel))');
+  } else { akar.removeProperty('--aksen'); akar.removeProperty('--aksen-lembut'); }
+}
+const merek = () => { const i = identitas(); return [h('img', {class: 'logo', src: i.logo, alt: ''}), i.nama, i.badan && h('span', null, '· ' + i.badan)]; };
 
 function render() {
   if (!S.user) return renderMasuk();
   if (!S.user.aktif) return renderMenunggu();
   const r = rute();
-  const nav = h('nav', {class: 'nav', id: 'nav', 'aria-label': 'Menu utama'}, tautanNav('dashboard', 'Dashboard', r));
-  const grup = {};
-  for (const t of tabelMenu()) (grup[TABEL[t].grup] ||= []).push(t);
-  for (const [nama, daftar] of Object.entries(grup)) {
-    nav.append(h('div', {class: 'nav-grup'}, nama), ...daftar.map((t) => tautanNav('t-' + t, TABEL[t].label, r.startsWith('sdm-') ? 't-sdm' : r.startsWith('klien-') ? 't-klien' : r, S.db[t].length)));
+  terapkanIdentitas();
+  const aktif = menuAktif(r);
+  const nav = h('nav', {class: 'nav', id: 'nav', 'aria-label': 'Menu utama'});
+  let grupSekarang;
+  for (const m of MENU.filter(menuTampil)) {
+    if (m.grup && m.grup !== grupSekarang) { grupSekarang = m.grup; nav.append(h('div', {class: 'nav-grup'}, m.grup)); }
+    nav.append(tautanNav(m, aktif === m.k, jumlahMenu(m)));
   }
-  nav.append(h('div', {class: 'nav-grup'}, 'Lainnya'), tautanNav('pengaturan', 'Pengaturan', r));
 
   const utama = h('main', {class: 'utama', id: 'utama'});
   const tabel = r.startsWith('t-') ? r.slice(2) : null;
-  if (tabel && TABEL[tabel] && !TABEL[tabel].tersembunyi && bolehAkses(tabel, S.user.role)) ({klien: renderKlien, sdm: renderSdm}[tabel] || renderTabel)(utama, tabel);
-  else if (r.startsWith('sdm-') && bolehAkses('sdm', S.user.role)) renderDetailPegawai(utama, r.slice(4));
-  else if (r.startsWith('klien-') && bolehAkses('klien', S.user.role)) renderDetailKlien(utama, r.slice(6));
-  else if (r === 'pengaturan') renderPengaturan(utama);
+  if (tabel && TABEL[tabel] && !TABEL[tabel].tersembunyi && bolehAkses(tabel)) ({klien: renderKlien, sdm: renderSdm}[tabel] || renderTabel)(utama, tabel);
+  else if (r.startsWith('sdm-') && bolehAkses('sdm')) renderDetailPegawai(utama, r.slice(4));
+  else if (r.startsWith('klien-') && bolehAkses('klien')) renderDetailKlien(utama, r.slice(6));
+  else if (r === 'kas' && hak('kas')) renderKas(utama);
+  else if (r.startsWith('kas-') && hak('kas')) renderMutasi(utama, r.slice(4));
+  else if (r === 'jurnal' && hak('jurnal')) renderJurnal(utama);
+  else if (r === 'rab' && hak('rab') && modulAktif('rab')) renderSegera(utama, menuDari('rab'));
+  else if (r.startsWith('segera-') && menuDari(r.slice(7)) && hak(r.slice(7))) renderSegera(utama, menuDari(r.slice(7)));
+  else if (r.startsWith('pengaturan') && (hak('pengaturan') || hak('kas') || hak('jurnal') || S.user.super_admin)) renderPengaturan(utama, r.slice(11));
   else renderDashboard(utama);
 
   akar.replaceChildren(...[
     h('header', {class: 'atas'},
       h('button', {class: 'tombol-menu', type: 'button', 'aria-label': 'Buka menu', 'aria-controls': 'nav', onclick: () => document.body.classList.toggle('nav-buka')}, '☰'),
-      h('a', {class: 'merek', href: '#dashboard'}, 'Alinea 5', h('span', null, 'Back office & proyek')),
+      h('a', {class: 'merek', href: '#dashboard'}, merek()),
       h('div', {class: 'atas-kanan'},
-        h('span', {class: 'pengguna'}, S.user.email, ' · ', S.user.role === 'admin' ? 'Admin' : 'Arsitek'),
+        lonceng(),
+        h('span', {class: 'pengguna'}, S.user.email, ' · ', namaPeran()),
         store.mode === 'supabase' && h('button', {class: 'btn btn-halus', type: 'button', onclick: aman(async () => { await store.keluar(); S.user = null; render(); })}, 'Keluar'))),
     store.mode === 'lokal' && h('div', {class: 'pita'}, 'Mode demo: data hanya tersimpan di browser ini dan tidak terlihat oleh orang lain. Sambungkan Supabase di js/config.js untuk data bersama.'),
     h('div', {class: 'badan'}, nav, utama)].filter(Boolean));
@@ -50,7 +81,16 @@ function render() {
   buangTeksPalsu(akar);
 }
 S.render = render;
-const tautanNav = (ke, label, aktif, jumlah) => h('a', {href: '#' + ke, class: 'nav-item' + (aktif === ke ? ' aktif' : ''), 'aria-current': aktif === ke ? 'page' : null}, h('span', null, label), jumlah != null && h('span', {class: 'nav-jml'}, String(jumlah)));
+const tautanNav = (m, aktif, jumlah) => h('a', {href: '#' + m.ke, title: m.judul || null, class: 'nav-item' + (aktif ? ' aktif' : ''), 'aria-current': aktif ? 'page' : null},
+  h('span', null, m.label), m.segera ? h('span', {class: 'label-segera'}, 'Segera') : jumlah != null && h('span', {class: 'nav-jml'}, String(jumlah)));
+
+// Menu yang belum dibangun.
+const TEKS_SEGERA = {rab: 'Modul ini sedang dikembangkan. Nantinya RAB dan penawaran dapat disusun dengan memakai database harga dari menu Barang & Harga.'};
+function renderSegera(el, m) {
+  el.append(h('div', {class: 'kepala'}, h('h1', null, m.label), m.judul && h('p', {class: 'redup'}, m.judul)),
+    h('div', {class: 'kartu kosong-ajakan'}, h('h2', null, 'Dalam pengembangan'),
+      h('p', null, TEKS_SEGERA[m.k] || 'Menu ini sedang dikembangkan dan akan tersedia pada tahap berikutnya.')));
+}
 
 // ---------- masuk ----------
 function renderMasuk() {
@@ -67,12 +107,14 @@ function renderMasuk() {
         S.user = store.user;
         if (hasil.perluKonfirmasiEmail) { galat.textContent = 'Akun dibuat. Buka email Anda dan klik tautan konfirmasi, lalu masuk di sini.'; return; }
       }
-      if (S.user?.aktif) await muatData();
+      if (S.user?.aktif) await mulaiSesi();
       render();
     } catch (e) { galat.textContent = e.message; }
   });
+  terapkanIdentitas();
+  const i = identitas();
   akar.replaceChildren(h('div', {class: 'tengah'}, h('form', {class: 'kartu kartu-masuk', onsubmit: jalankan('masuk')},
-    h('h1', null, 'Alinea 5'),
+    h('div', {class: 'masuk-merek'}, h('img', {class: 'logo logo-besar', src: i.logo, alt: ''}), h('div', null, h('h1', null, i.nama), i.badan && h('p', {class: 'redup'}, i.badan))),
     h('p', {class: 'redup'}, 'Masuk untuk membuka data back office dan proyek.'),
     h('label', {for: 'masuk-email'}, 'Email'), email,
     h('label', {for: 'masuk-sandi'}, 'Kata sandi'), sandi,
@@ -84,8 +126,8 @@ function renderMasuk() {
 function renderMenunggu() {
   akar.replaceChildren(h('div', {class: 'tengah'}, h('div', {class: 'kartu kartu-masuk'},
     h('h1', null, 'Menunggu aktivasi'),
-    h('p', null, 'Akun ', h('b', null, S.user.email), ' sudah terdaftar tetapi belum diaktifkan. Minta admin Alinea 5 mengaktifkannya di menu Pengaturan.'),
-    h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => { S.user = await store.init(); if (S.user?.aktif) await muatData(); render(); })}, 'Periksa lagi'),
+    h('p', null, 'Akun ', h('b', null, S.user.email), ' sudah terdaftar tetapi belum diaktifkan. Minta super admin ' + identitas().nama + ' mengaktifkannya di Pengaturan → Pengguna & peran.'),
+    h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => { S.user = await store.init(); if (S.user?.aktif) await mulaiSesi(); render(); })}, 'Periksa lagi'),
     h('button', {class: 'btn btn-halus', type: 'button', onclick: aman(async () => { await store.keluar(); S.user = null; render(); })}, 'Keluar'))));
 }
 
@@ -98,13 +140,17 @@ const tabelSederhana = (judul, rows, kosongTeks) => h('div', {class: 'gulir'}, h
 const duaBaris = (atas, bawah) => [h('span', null, atas), h('span', {class: 'kecil redup blok'}, bawah)];
 
 function renderDashboard(el) {
-  const d = S.d, r = ringkasan(d), admin = S.user.role === 'admin';
-  const adaData = NAMA_TABEL.some((t) => S.db[t].length);
+  const d = S.d, r = ringkasan(d);
+  const admin = hak('kontrak') != null || hak('termin') != null;
+  const adaData = NAMA_TABEL.some((t) => S.db[t].length) || S.keu.rekening.length;
   el.append(h('div', {class: 'kepala'}, h('h1', null, 'Dashboard'), h('p', {class: 'redup'}, 'Per ' + tgl(hariIni()) + '. Semua angka dihitung langsung dari data yang tersimpan.')));
   if (!adaData) {
     el.append(h('div', {class: 'kartu'}, h('h2', null, 'Belum ada data'),
-      h('p', null, 'Mulai dengan mengimpor dua file Excel Alinea 5, atau isi langsung dari menu Proyek.'),
-      h('div', {class: 'baris-tombol'}, h('a', {class: 'btn btn-utama', href: '#pengaturan'}, 'Impor dari Excel'), h('a', {class: 'btn', href: '#t-proyek'}, 'Tambah proyek pertama'))));
+      h('p', null, 'Mulai dengan melengkapi profil perusahaan dan rekening Kas & Bank, lalu isi proyek dan klien. Data yang sudah ada di Excel bisa diimpor per menu (contoh: Klien → Impor).'),
+      h('div', {class: 'baris-tombol'},
+        hak('pengaturan') && h('a', {class: 'btn btn-utama', href: '#pengaturan-profil'}, 'Isi profil perusahaan'),
+        bisaUbah('kas') && h('a', {class: 'btn', href: '#kas'}, 'Tambah rekening'),
+        bisaUbah('proyek') && h('a', {class: 'btn', href: '#t-proyek'}, 'Tambah proyek pertama'))));
     return;
   }
   const ub = [];
@@ -113,7 +159,7 @@ function renderDashboard(el) {
     ubin('Sudah diterima', rpRingkas(r.diterima), persen(r.pct_diterima) + ' dari nilai kontrak'),
     ubin('Piutang', rpRingkas(r.piutang), 'sudah ditagih, belum dibayar'),
     ubin('Belum ditagih', rpRingkas(r.belum_ditagih), 'sisa nilai kontrak'));
-  if (admin && S.db.sdm.length) ub.push(h('a', {class: 'ubin ubin-tautan', href: '#t-sdm', onclick: () => { S.saringSdm = {aktif: 'Aktif', status: '', peringatan: r.sdm_peringatan > 0}; }},
+  if (hak('sdm') && S.db.sdm.length) ub.push(h('a', {class: 'ubin ubin-tautan', href: '#t-sdm', onclick: () => { S.saringSdm = {aktif: 'Aktif', status: '', peringatan: r.sdm_peringatan > 0}; }},
     h('span', {class: 'ubin-label'}, 'Peringatan SDM'), h('span', {class: 'ubin-nilai'}, String(r.sdm_peringatan)),
     h('span', {class: 'ubin-kaki'}, r.sdm_peringatan ? r.sdm_pegawai_peringatan + ' pegawai · kontrak, SKK/STRA, magang' : 'tidak ada yang perlu ditindaklanjuti')));
   ub.push(
@@ -155,7 +201,7 @@ function renderDashboard(el) {
     tabelSederhana([['Proyek'], ['Masalah dan tindakan'], ['Dampak'], ['PIC'], ['Target selesai'], ['Umur (hari)', 1], ['Target']],
       masalah.map((m) => [m.nama_proyek, duaBaris(m.uraian, 'Tindakan: ' + isi(m.tindakan)), pill(m.dampak), isi(m.pic), tgl(m.target), isi(m.umur), m.lewat ? pill('LEWAT') : 'Belum lewat']), 'Tidak ada masalah terbuka.')));
 
-  if (admin) {
+  if (admin && hak('hutang_lain') && modulAktif('hutang_lain')) {
     el.append(h('section', {class: 'bagian'}, h('h2', null, 'Hutang dan kewajiban'),
       h('div', {class: 'ubin-grid'},
         ubin('Hutang ke vendor / tukang', rpRingkas(r.hutang_vendor), 'retensi ditahan ' + rpRingkas(r.retensi)),
@@ -205,11 +251,20 @@ function renderTabel(el, nama) {
   const cari = h('input', {id: 'cari', type: 'search', placeholder: 'Cari…', 'aria-label': 'Cari di tabel', value: S.cari, oninput: (ev) => { S.cari = ev.target.value; gambar(); }});
   const saring = adaProyek && h('select', {id: 'saring-proyek', 'aria-label': 'Saring menurut proyek', onchange: (ev) => { S.filterProyek = ev.target.value; gambar(); }},
     h('option', {value: ''}, 'Semua proyek'), urutkan(S.db.proyek, 'kode').map((p) => h('option', {value: p.kode, selected: p.kode === S.filterProyek}, p.kode + ' — ' + isi(p.nama))));
+  const m = menuDari(MENU.find((x) => x.tabel === nama)?.k);
+  el.append(h('div', {class: 'kepala'}, h('h1', null, m?.label || def.label), h('p', {class: 'redup'}, (m?.judul ? m.judul + '. ' : '') + def.bantuan)));
+  if (nama === 'kontrak') {
+    S.tabKontrak = S.tabKontrak || 'klien';
+    el.append(h('div', {class: 'tabs', role: 'tablist'}, [['klien', 'Klien'], ['vendor', 'Vendor']].map(([k, l]) => h('button', {class: 'tab', type: 'button', role: 'tab', 'aria-selected': String(S.tabKontrak === k), onclick: () => { S.tabKontrak = k; render(); }}, l))));
+    if (S.tabKontrak === 'vendor') {
+      el.append(h('div', {class: 'kartu kosong-ajakan'}, h('h2', null, 'Dalam pengembangan'), h('p', null, 'Kontrak vendor akan tersedia pada tahap berikutnya.')));
+      return;
+    }
+  }
   el.append(
-    h('div', {class: 'kepala'}, h('h1', null, def.label), h('p', {class: 'redup'}, def.bantuan)),
     h('div', {class: 'alat'}, cari, saring, hitungan, h('span', {class: 'pegas'}),
-      nama === 'tahap' && h('button', {class: 'btn', type: 'button', onclick: () => bukaTahapMassal()}, 'Tambah semua tahap proyek'),
-      h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaForm(nama, null)}, 'Tambah ' + def.satuan)),
+      nama === 'tahap' && bolehUbahTabel('tahap') && h('button', {class: 'btn', type: 'button', onclick: () => bukaTahapMassal()}, 'Tambah semua tahap proyek'),
+      bolehUbahTabel(nama) && h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaForm(nama, null)}, 'Tambah ' + def.satuan)),
     h('div', {class: 'gulir'}, h('table', {class: 'tabel'}, h('thead', null, h('tr', null, def.kolom.map(([, label, f]) => h('th', {class: RATA_KANAN.includes(f) ? 'kanan' : null}, label)))), badan)));
   gambar();
 }
@@ -228,7 +283,7 @@ function buatMasukan(f, nilai, tabel, ctx = {}) {
   if (f.t === 'catatan') return h('textarea', {id, rows: '2', required: f.wajib}, nilai ?? '');
   if (f.t === 'pilih' || f.t === 'yt') return pilihan(id, OPSI[f.t === 'yt' ? 'yt' : f.opsi].map((o) => [o, o]), nilai, f.wajib);
   if (f.t === 'proyek') return pilihan(id, urutkan(S.db.proyek, 'kode').map((p) => [p.kode, p.kode + ' — ' + isi(p.nama)]), nilai, f.wajib);
-  if (f.t === 'klien') return pilihKlien(id, nilai, S.user.role === 'admin', f.wajib);
+  if (f.t === 'klien') return pilihKlien(id, nilai, bisaUbah('klien'), f.wajib);
   if (f.t === 'tim') return pilihan(id, namaTimInternal().map((x) => [x, x]), nilai, f.wajib);
   if (f.t === 'tanggal') return h('input', {id, type: 'date', value: nilai ?? '', required: f.wajib});
   if (['hp', 'email', 'npwp'].includes(f.t)) return kotakCek(h('input', {id, type: 'text', value: nilai ?? '', required: f.wajib, autocomplete: 'off'}), f.t, f.bantuan);
@@ -263,6 +318,7 @@ function bukaForm(tabel, baris) {
     await muatData(); dlg.close(); render(); pesan(def.label + ': baris dihapus.');
   })}, 'Hapus');
   const simpan = h('button', {class: 'btn btn-utama', type: 'submit'}, 'Simpan');
+  const bisa = bolehUbahTabel(tabel);
   const ctx = {baris};
   const form = h('form', {class: 'form', onsubmit: async (ev) => {
     ev.preventDefault();
@@ -277,7 +333,7 @@ function bukaForm(tabel, baris) {
       const v = bacaMasukan(f, form);
       if (v != null) data[f.k] = v; else delete data[f.k];
       if (f.t === 'klien' && f.wajib && v == null) {
-        galat.textContent = 'Klien wajib dipilih dari daftar' + (S.user.role === 'admin' ? '. Jika belum ada, pakai "+ Tambah klien baru".' : '. Jika belum ada, minta admin menambahkannya di menu Klien.');
+        galat.textContent = 'Klien wajib dipilih dari daftar' + (bisaUbah('klien') ? '. Jika belum ada, pakai "+ Tambah klien baru".' : '. Jika belum ada, minta admin menambahkannya di menu Klien.');
         form.querySelector('#f-klien_id-cari')?.focus();
         return;
       }
@@ -297,8 +353,9 @@ function bukaForm(tabel, baris) {
       buatMasukan(f, f.t === 'klien' ? S.d[tabel].find((x) => x.id === baris?.id)?.klien_ref : baris?.[f.k], tabel, ctx),
       f.bantuan && !['hp', 'email', 'npwp'].includes(f.t) && h('span', {class: 'kecil redup'}, f.bantuan)))),
     galat,
-    h('div', {class: 'form-kaki'}, hapus, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, 'Batal'), simpan));
-  dlg = dialog((baris ? 'Ubah ' : 'Tambah ') + def.satuan, form);
+    h('div', {class: 'form-kaki'}, bisa && hapus, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, bisa ? 'Batal' : 'Tutup'), bisa && simpan));
+  if (!bisa) form.querySelectorAll('input,select,textarea,.kombo button').forEach((x) => { x.disabled = true; });
+  dlg = dialog((bisa ? (baris ? 'Ubah ' : 'Tambah ') : '') + def.satuan, form);
   if (tabel === 'kontrak') {
     // Memilih proyek mengisi klien dari proyek itu bila klien kontrak masih kosong.
     const pilihProyek = form.querySelector('#f-kode'), klien = form.querySelector('#f-klien_id');
@@ -334,229 +391,20 @@ function bukaTahapMassal() {
     h('div', {class: 'form-kaki'}, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, 'Batal'), h('button', {class: 'btn btn-utama', type: 'submit'}, 'Tambah'))));
 }
 
-// ---------- pengaturan ----------
-function renderPengaturan(el) {
-  const admin = S.user.role === 'admin';
-  el.append(h('div', {class: 'kepala'}, h('h1', null, 'Pengaturan'), h('p', {class: 'redup'}, store.mode === 'lokal'
-    ? 'Penyimpanan: browser ini saja (mode demo).'
-    : 'Penyimpanan: Supabase. Anda masuk sebagai ' + S.user.email + ' (' + S.user.role + ').')));
-
-  // Impor Excel
-  const hasilImpor = h('div');
-  const berkas = h('input', {id: 'impor-excel', type: 'file', accept: '.xlsx', onchange: aman(async () => {
-    const f = berkas.files[0];
-    if (!f) return;
-    hasilImpor.replaceChildren(h('p', {class: 'redup'}, 'Membaca ' + f.name + '…'));
-    const hasil = await bacaExcel(await f.arrayBuffer());
-    if (hasil.jenis === 'admin' && !admin) throw new Error('File Back Office hanya bisa diimpor oleh admin.');
-    const tabel = Object.keys(hasil.data);
-    const tombol = h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => {
-      tombol.disabled = true;
-      const rows = tabel.flatMap((t) => hasil.data[t].map((data) => ({tabel: t, data})));
-      await store.gantiTabel(tabel, rows);
-      await muatData();
-      const ada = new Set(S.db.proyek.map((p) => p.kode));
-      const rintisan = hasil.masterProyek.filter((p) => !ada.has(p.kode)).map((p) => ({tabel: 'proyek', data: bersih(p)}));
-      if (rintisan.length) { await store.tambahBanyak(rintisan); await muatData(); }
-      render(); pesan('Impor selesai: ' + rows.length + ' baris.');
-    })}, 'Ganti isi tabel tersebut dengan data file ini');
-    hasilImpor.replaceChildren(
-      h('p', null, 'Terbaca sebagai ', h('b', null, hasil.jenis === 'admin' ? 'file Back Office (Admin)' : 'file Data Proyek (Tim Arsitek)'), ':'),
-      h('ul', null, tabel.map((t) => h('li', null, TABEL[t].label + ': ' + hasil.data[t].length + ' baris (sekarang ' + S.db[t].length + ')'))),
-      h('p', {class: 'redup kecil'}, 'Isi tabel di atas akan diganti seluruhnya. Tabel lain tidak disentuh.'), tombol);
-  })});
-  el.append(h('section', {class: 'kartu'}, h('h2', null, 'Impor dari Excel'),
-    h('p', null, 'Pilih file Back Office (Admin) atau Data Proyek (Tim Arsitek). Hanya kolom isian yang dibaca; kolom rumus dihitung ulang oleh aplikasi.'),
-    h('label', {for: 'impor-excel', class: 'kecil redup'}, 'File .xlsx'), berkas, hasilImpor));
-
-  // Cadangan
-  const pulih = h('input', {id: 'pulih-json', type: 'file', accept: '.json,application/json', onchange: aman(async () => {
-    const f = pulih.files[0];
-    if (!f) return;
-    const isiFile = JSON.parse(await f.text());
-    const tabel = tabelBoleh().filter((t) => Array.isArray(isiFile[t]));
-    if (!tabel.length) throw new Error('File cadangan tidak berisi tabel yang dikenali.');
-    const rows = tabel.flatMap((t) => isiFile[t].map((r) => ({tabel: t, data: bersih(r)})));
-    hasilPulih.replaceChildren(h('p', null, 'Cadangan berisi ' + rows.length + ' baris di ' + tabel.length + ' tabel. Isi tabel-tabel itu akan diganti.'),
-      h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => { await store.gantiTabel(tabel, rows); await muatData(); render(); pesan('Cadangan dipulihkan.'); })}, 'Pulihkan sekarang'));
-  })});
-  const hasilPulih = h('div');
-  el.append(h('section', {class: 'kartu'}, h('h2', null, 'Cadangan'),
-    h('p', null, 'Unduh seluruh data yang bisa Anda akses sebagai satu file JSON, atau pulihkan dari file cadangan.'),
-    h('div', {class: 'baris-tombol'}, h('button', {class: 'btn', type: 'button', onclick: () => {
-      const data = Object.fromEntries(tabelBoleh().map((t) => [t, S.db[t].map(bersih)]));
-      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'}));
-      const a = h('a', {href: url, download: 'alinea5-cadangan-' + hariIni() + '.json'});
-      document.body.append(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }}, 'Unduh cadangan (.json)')),
-    h('label', {for: 'pulih-json', class: 'kecil redup'}, 'Pulihkan dari file cadangan'), pulih, hasilPulih));
-
-  if (admin) el.append(bagianZona(), bagianJabatan(), bagianParamSdm());
-
-  // Pilihan dropdown
-  if (admin) {
-    const kotak = {};
-    const galat = h('p', {class: 'form-galat', role: 'alert'});
-    el.append(h('section', {class: 'kartu'}, h('h2', null, 'Pilihan dropdown'),
-      h('p', null, 'Atur isi daftar pilihan di formulir. Tulis satu pilihan per baris; urutannya menjadi urutan di dropdown.'),
-      h('p', {class: 'kecil redup'}, 'Mengganti nama pilihan tidak mengubah data yang sudah tersimpan: baris lama tetap menyimpan nama lama. Pada Sumber klien, "Referensi" dan "Lainnya" memunculkan kotak isian tambahan selama namanya tidak diubah. Daftar yang dipakai rumus (status proyek, status masalah, dampak, bentuk dokumen, sumber dana, kondisi aset, tahap, jenis klien) tidak bisa diubah.'),
-      Object.entries(OPSI_BISA_DIATUR).map(([k, label]) => {
-        const ta = h('textarea', {id: 'opsi-' + k, rows: '7'}, opsiSekarang(k).join('\n'));
-        kotak[k] = ta;
-        return h('details', {class: 'opsi'}, h('summary', null, label, h('span', {class: 'redup kecil'}, ' · ' + opsiSekarang(k).length + ' pilihan')),
-          h('label', {for: 'opsi-' + k, class: 'kecil redup'}, 'Satu pilihan per baris'), ta,
-          h('div', null, h('button', {class: 'btn btn-kecil', type: 'button', onclick: () => { ta.value = opsiBawaan(k).join('\n'); }}, 'Isi dengan pilihan bawaan')));
-      }),
-      galat,
-      h('div', {class: 'baris-tombol'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => {
-        galat.textContent = '';
-        const opsi = {};
-        for (const [k, label] of Object.entries(OPSI_BISA_DIATUR)) {
-          const daftar = [...new Set(kotak[k].value.split('\n').map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean))];
-          if (!daftar.length) { galat.textContent = label + ': minimal satu pilihan.'; return; }
-          if (k === 'sumberKlien' && daftar.some((x) => x.includes(','))) { galat.textContent = label + ': pilihan tidak boleh memuat koma (dipakai sebagai dropdown di file Excel).'; return; }
-          opsi[k] = daftar;
-        }
-        await simpanPengaturan('opsi', opsi);
-        pesan('Pilihan dropdown tersimpan.');
-      })}, 'Simpan pilihan'))));
-  }
-
-  // Pengguna
-  if (store.mode === 'supabase' && admin) {
-    const daftar = h('div', null, h('p', {class: 'redup'}, 'Memuat pengguna…'));
-    el.append(h('section', {class: 'kartu'}, h('h2', null, 'Pengguna'),
-      h('p', null, 'Akun baru mendaftar sendiri dari halaman masuk, lalu diaktifkan di sini. Arsitek hanya melihat tabel Proyek dan Master; admin melihat semuanya.'), daftar));
-    aman(async () => {
-      const orang = await store.pengguna();
-      daftar.replaceChildren(h('div', {class: 'gulir'}, h('table', {class: 'tabel'},
-        h('thead', null, h('tr', null, ['Email', 'Peran', 'Aktif'].map((x) => h('th', null, x)))),
-        h('tbody', null, orang.map((o) => {
-          const diri = o.id === S.user.id;
-          return h('tr', null, h('td', null, o.email, diri && ' (Anda)'),
-            h('td', null, h('select', {'aria-label': 'Peran ' + o.email, disabled: diri, onchange: aman(async (ev) => { await store.aturPengguna(o.id, {role: ev.target.value}); pesan('Peran diperbarui.'); })},
-              ['arsitek', 'admin'].map((x) => h('option', {value: x, selected: o.role === x}, x === 'admin' ? 'Admin' : 'Arsitek')))),
-            h('td', null, h('input', {type: 'checkbox', 'aria-label': 'Aktif ' + o.email, checked: o.aktif, disabled: diri, onchange: aman(async (ev) => { await store.aturPengguna(o.id, {aktif: ev.target.checked}); pesan(ev.target.checked ? 'Akun diaktifkan.' : 'Akun dinonaktifkan.'); })})));
-        })))));
-    })();
-  }
-}
-
-// Menyimpan satu bagian pengaturan tanpa menyentuh bagian lain.
-async function simpanPengaturan(bagian, isiBaru) {
-  try {
-    await store.simpan('pengaturan', S.pengaturan?.id, {...S.pengaturan?.data, [bagian]: isiBaru});
-  } catch (e) {
-    throw new Error('Pengaturan belum bisa disimpan ke database. Jalankan SQL pembaruan terbaru di Supabase, lalu coba lagi. (' + e.message + ')');
-  }
-  await muatData(); render();
-}
-
-// Zona waktu: menentukan tanggal "hari ini" untuk peringatan, umur piutang, dan jatuh tempo.
-function bagianZona() {
-  const pilih = h('select', {id: 'zona-waktu'}, Object.entries(ZONA_WAKTU).map(([v, l]) => h('option', {value: v, selected: v === zonaAktif()}, l)));
-  return h('section', {class: 'kartu'}, h('h2', null, 'Zona waktu'),
-    h('p', null, 'Menentukan tanggal "hari ini" untuk peringatan, umur piutang, dan jatuh tempo, apa pun jam di perangkat pengguna. Hari ini: ' + tgl(hariIni()) + '.'),
-    h('div', {class: 'form-grid'}, h('div', {class: 'medan'}, h('label', {for: 'zona-waktu'}, 'Zona waktu'), pilih)),
-    h('div', {class: 'baris-tombol'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => {
-      await simpanPengaturan('zona_waktu', pilih.value);
-      pesan('Zona waktu tersimpan: ' + ZONA_WAKTU[pilih.value] + '.');
-    })}, 'Simpan zona waktu')));
-}
-
-// Daftar jabatan SDM: tambah, ubah nama, tandai perlu SKK/STRA, nonaktifkan. Yang dipakai tidak bisa dihapus.
-function bagianJabatan() {
-  const {jabatan} = aturSdm(S.pengaturan?.data);
-  const dipakai = (jid) => S.d.sdm.filter((s) => s.jabatan_id === jid).length;
-  const badan = h('tbody');
-  const galat = h('p', {class: 'form-galat', role: 'alert'});
-  const baris = [];
-  let nomor = 0;
-  const tambah = (j) => {
-    const i = ++nomor, pakai = j.id ? dipakai(j.id) : 0;
-    const nama = h('input', {type: 'text', id: 'jab-nama-' + i, value: j.nama || '', autocomplete: 'off', 'aria-label': 'Nama jabatan'});
-    const skk = h('input', {type: 'checkbox', checked: !!j.skk, 'aria-label': 'Memerlukan SKK/STRA'});
-    const aktif = h('input', {type: 'checkbox', checked: j.aktif !== false, 'aria-label': 'Aktif'});
-    const item = {id: j.id, nama, skk, aktif};
-    const tr = h('tr', null, h('td', null, nama), h('td', {class: 'tengah-teks'}, skk), h('td', {class: 'tengah-teks'}, aktif),
-      h('td', {class: 'kanan'}, pakai ? idn(pakai) + ' pegawai' : '—'),
-      h('td', null, pakai ? h('span', {class: 'kecil redup'}, 'Dipakai; nonaktifkan saja') : h('button', {class: 'btn btn-kecil', type: 'button', onclick: () => { baris.splice(baris.indexOf(item), 1); tr.remove(); }}, 'Hapus')));
-    baris.push(item);
-    badan.append(tr);
-    return nama;
-  };
-  jabatan.forEach(tambah);
-  return h('section', {class: 'kartu'}, h('h2', null, 'Jabatan (SDM)'),
-    h('p', null, 'Daftar jabatan untuk formulir pegawai. Centang "Memerlukan SKK/STRA" agar isian nomor, masa berlaku, dan file sertifikat muncul untuk jabatan itu. Jabatan yang sudah dipakai tidak bisa dihapus, hanya dinonaktifkan (tidak muncul lagi sebagai pilihan).'),
-    h('div', {class: 'gulir'}, h('table', {class: 'tabel tabel-isian'},
-      h('thead', null, h('tr', null, h('th', null, 'Nama jabatan'), h('th', null, 'Memerlukan SKK/STRA'), h('th', null, 'Aktif'), h('th', {class: 'kanan'}, 'Dipakai'), h('th', null, ''))), badan)),
-    galat,
-    h('div', {class: 'baris-tombol'},
-      h('button', {class: 'btn', type: 'button', onclick: () => tambah({skk: false, aktif: true}).focus()}, '+ Tambah jabatan'),
-      h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => {
-        galat.textContent = '';
-        const hasil = [], nama = new Set();
-        for (const b of baris) {
-          const n = b.nama.value.replace(/\s+/g, ' ').trim();
-          if (!n) { galat.textContent = 'Nama jabatan tidak boleh kosong.'; b.nama.focus(); return; }
-          if (nama.has(n.toLowerCase())) { galat.textContent = 'Jabatan "' + n + '" tertulis dua kali.'; b.nama.focus(); return; }
-          nama.add(n.toLowerCase());
-          hasil.push({id: b.id || 'j-' + idBaruPendek(), nama: n, skk: b.skk.checked, aktif: b.aktif.checked});
-        }
-        if (!hasil.some((j) => j.aktif)) { galat.textContent = 'Minimal satu jabatan aktif.'; return; }
-        await simpanPengaturan('jabatan', hasil);
-        pesan('Daftar jabatan tersimpan.');
-      })}, 'Simpan jabatan')));
-}
-const idBaruPendek = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-
-// Parameter peringatan SDM. Batas PKWT boleh dikosongkan: pengecekannya tidak dijalankan.
-function bagianParamSdm() {
-  const {param} = aturSdm(S.pengaturan?.data);
-  const galat = h('p', {class: 'form-galat', role: 'alert'});
-  const BARIS = [
-    ['hari_kontrak', 'Peringatan kontrak PKWT akan habis', 'hari', true, 'Sebelum kontrak berakhir.'],
-    ['hari_skk', 'Peringatan SKK/STRA akan habis', 'hari', true, 'Sebelum tanggal berlaku s.d.'],
-    ['hari_magang', 'Peringatan magang akan berakhir', 'hari', true, 'Sebelum periode magang selesai.'],
-    ['pkwt_awal_bln', 'Durasi maksimal kontrak awal', 'bulan', false, 'Kosongkan bila tidak dibatasi.'],
-    ['pkwt_maks_perpanjangan', 'Jumlah maksimal perpanjangan', 'kali', false, 'Kosongkan bila tidak dibatasi.'],
-    ['pkwt_perpanjangan_bln', 'Durasi maksimal per perpanjangan', 'bulan', false, 'Kosongkan bila tidak dibatasi.'],
-  ];
-  const kotak = {};
-  const medan = ([k, label, satuan, wajib, bantuan]) => {
-    const inp = h('input', {id: 'param-' + k, type: 'number', min: '0', step: '1', value: param[k] ?? '', placeholder: wajib ? String(PARAM_BAWAAN[k]) : 'tidak dibatasi'});
-    kotak[k] = inp;
-    return h('div', {class: 'medan'}, h('label', {for: 'param-' + k}, label, wajib && h('span', {class: 'wajib', title: 'Wajib diisi'}, ' *')), h('div', {class: 'berakhiran'}, inp, h('span', null, satuan)), h('span', {class: 'kecil redup'}, bantuan));
-  };
-  return h('section', {class: 'kartu'}, h('h2', null, 'Peringatan SDM'),
-    h('p', null, 'Kapan peringatan muncul di tabel SDM dan Dashboard.'),
-    h('h3', null, 'Batas waktu peringatan'), h('div', {class: 'form-grid'}, BARIS.slice(0, 3).map(medan)),
-    h('h3', null, 'Batas kontrak PKWT (opsional)'),
-    h('p', {class: 'kecil redup'}, 'Bila diisi, aplikasi memberi peringatan saat kontrak yang diinput melebihi batas ini atau jatah perpanjangan sudah habis.'),
-    h('div', {class: 'form-grid'}, BARIS.slice(3).map(medan)),
-    galat,
-    h('div', {class: 'baris-tombol'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => {
-      galat.textContent = '';
-      const hasil = {};
-      for (const [k, label, , wajib] of BARIS) {
-        const v = kotak[k].value.trim();
-        if (v === '' && wajib) { galat.textContent = label + ' wajib diisi.'; kotak[k].focus(); return; }
-        if (v !== '' && (!/^\d+$/.test(v))) { galat.textContent = label + ': isi dengan angka bulat 0 atau lebih.'; kotak[k].focus(); return; }
-        hasil[k] = v === '' ? null : +v;
-      }
-      await simpanPengaturan('sdm', hasil);
-      pesan('Pengaturan peringatan SDM tersimpan.');
-    })}, 'Simpan pengaturan peringatan')));
-}
-
 // ---------- mulai ----------
+async function mulaiSesi() {
+  await muatData();
+  await muatStatusNotifikasi();
+  periksaCadanganOtomatis();
+}
 window.addEventListener('hashchange', () => { S.cari = ''; if (S.user?.aktif) render(); });
 (async () => {
   try {
     S.user = await store.init();
-    if (S.user?.aktif) await muatData();
+    if (S.user?.aktif) await mulaiSesi();
+    else S.identitas = await store.keu.identitas().catch(() => ({}));
     render();
+    mulaiPemeriksaanHarian();
   } catch (e) {
     console.error(e);
     akar.replaceChildren(h('div', {class: 'tengah'}, h('div', {class: 'kartu kartu-masuk'}, h('h1', null, 'Aplikasi gagal dimuat'),

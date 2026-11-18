@@ -32,7 +32,10 @@ export function aturSdm(data) {
   }
   const param = {...PARAM_BAWAAN};
   for (const k of Object.keys(PARAM_BAWAAN)) if (data?.sdm && k in data.sdm) param[k] = angkaAtauNull(data.sdm[k]) ?? (k.startsWith('hari') ? PARAM_BAWAAN[k] : null);
-  return {jabatan: (jabatan || JABATAN_BAWAAN).map((j) => ({...j})), param};
+  // Modul SKK/STRA dimatikan di Pengaturan: tidak ada isian maupun peringatan SKK/STRA (data lama tetap tersimpan).
+  const skk = data?.modul?.skk !== false;
+  if (!skk) param.hari_skk = -Infinity;
+  return {jabatan: (jabatan || JABATAN_BAWAAN).map((j) => ({...j, skk: skk && !!j.skk})), param, skk};
 }
 
 // Jabatan seorang pegawai: lewat jabatan_id; data lama yang hanya menyimpan nama dicocokkan lewat nama.
