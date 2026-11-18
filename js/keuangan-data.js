@@ -6,6 +6,8 @@
 // Uang selalu rupiah utuh (bilangan bulat).
 import {idBaru} from './store.js';
 import {PERAN_BAWAAN} from './akses.js';
+import {hitungTermin, isiRetensi, periksaKontrak, nomorInvoice, periksaFormatInvoice, alokasiPenerimaan, tglPencairanRetensi, pkpPada,
+  FORMAT_INVOICE_BAWAAN, JATUH_TEMPO_BAWAAN, TARIF_PPN_BAWAAN} from './kontrak-util.js';
 
 // ---------- data standar (sama dengan migrasi) ----------
 export const AKUN_STANDAR = [
@@ -34,16 +36,37 @@ export const PEMETAAN = [
   ['transfer', 2, 'Transfer antar rekening', 'K', 'REKENING_ASAL', 'Rekening asal'],
   ['transfer_biaya', 1, 'Biaya admin transfer', 'D', '7-4', 'Biaya Administrasi Bank'],
   ['transfer_biaya', 2, 'Biaya admin transfer', 'K', 'REKENING_ASAL', 'Rekening asal'],
+  // Tahap 3: satu sisi per jenis; jurnal tetap wajib seimbang.
+  ['terima_rekening', 1, 'Penerimaan termin – uang masuk', 'D', 'REKENING', 'Rekening penerima (jumlah yang diterima)'],
+  ['terima_potongan', 1, 'Penerimaan termin – pajak dipotong klien', 'D', '1-3', 'Pajak Dibayar di Muka (potongan pajak oleh klien)'],
+  ['terima_pendapatan', 1, 'Penerimaan termin – porsi jasa (basis kas)', 'K', 'AKUN_PENDAPATAN', '4-1 atau 4-2 sesuai pilihan di kontrak, di luar PPN'],
+  ['terima_titipan', 1, 'Penerimaan termin – porsi titipan (basis kas)', 'K', '2-4', 'Hutang Dana Titipan Klien (material/tukang turn-key)'],
+  ['terima_ppn', 1, 'Penerimaan termin – PPN (basis kas)', 'K', '2-5', 'PPN Keluaran (bila PKP dan ada PPN)'],
+  ['terima_piutang', 1, 'Penerimaan termin – pelunasan piutang (basis akrual)', 'K', '1-2', 'Piutang Usaha'],
+  ['invoice_piutang', 1, 'Invoice termin (basis akrual)', 'D', '1-2', 'Piutang Usaha sebesar nilai tagihan'],
+  ['invoice_pendapatan', 1, 'Invoice termin – porsi jasa (basis akrual)', 'K', 'AKUN_PENDAPATAN', '4-1 atau 4-2 sesuai kontrak, di luar PPN dan retensi'],
+  ['invoice_titipan', 1, 'Invoice termin – porsi titipan (basis akrual)', 'K', '2-4', 'Hutang Dana Titipan Klien'],
+  ['invoice_ppn', 1, 'Invoice termin – PPN (basis akrual)', 'K', '2-5', 'PPN Keluaran'],
 ].map(([jenis, urut, nama, sisi, akun, keterangan]) => ({jenis, urut, nama, sisi, akun, keterangan}));
 export const ISI_PEMETAAN = {
   REKENING: 'Rekening yang dipilih', AKUN_DIPILIH: 'Akun yang dipilih di transaksi',
-  REKENING_ASAL: 'Rekening asal', REKENING_TUJUAN: 'Rekening tujuan',
+  REKENING_ASAL: 'Rekening asal', REKENING_TUJUAN: 'Rekening tujuan', AKUN_PENDAPATAN: 'Akun pendapatan di kontrak (4-1 / 4-2)',
 };
 export const GOLONGAN = {1: 'Aset', 2: 'Kewajiban', 3: 'Ekuitas', 4: 'Pendapatan', 5: 'Beban proyek', 6: 'Beban operasional', 7: 'Beban lain-lain'};
 export const saldoNormal = (gol) => (gol === 1 || gol >= 5 ? 'D' : 'K');
 export const JENIS_REKENING = ['Giro', 'Tabungan', 'Deposito', 'Kas tunai'];
-export const SUMBER_JURNAL = {manual: 'Jurnal manual', saldo_awal: 'Saldo awal', kas: 'Kas umum', transfer: 'Transfer'};
-export const AKUNTANSI_BAWAAN = {basis: 'kas', bulan_awal_buku: 1, batas_kapitalisasi: 10000000};
+export const SUMBER_JURNAL = {manual: 'Jurnal manual', saldo_awal: 'Saldo awal', kas: 'Kas umum', transfer: 'Transfer', penerimaan: 'Penerimaan termin', invoice: 'Invoice'};
+export const AKUNTANSI_BAWAAN = {basis: 'kas', bulan_awal_buku: 1, batas_kapitalisasi: 10000000, tarif_ppn_bp: TARIF_PPN_BAWAAN, format_invoice: FORMAT_INVOICE_BAWAAN, jatuh_tempo_hari: JATUH_TEMPO_BAWAAN};
+// Kolom kontrak yang diisi dari formulir (sisanya diisi sistem).
+export const KOLOM_KONTRAK = ['proyek_kode', 'no_kontrak', 'tanggal', 'jenis_perjanjian', 'bentuk_dokumen', 'file', 'nilai_jasa', 'nilai_titipan', 'ppn', 'akun_pendapatan',
+  'mulai', 'selesai', 'denda_alinea_persen', 'denda_alinea_maks', 'denda_alinea_maks_jenis', 'denda_klien_persen', 'denda_klien_satuan', 'denda_klien_maks',
+  'denda_klien_maks_jenis', 'retensi_bp', 'masa_pemeliharaan_hari', 'tgl_serah_terima', 'garansi_bulan', 'garansi_mulai', 'klausul'];
+export const TABEL_KONTRAK = ['kontrak_klien', 'kontrak_addendum', 'termin', 'penerimaan'];
+// Perkiraan nomor invoice berikutnya (nomor pasti diberikan saat disimpan).
+export function nomorInvoiceBerikut(K, tanggal) {
+  const f = K.akuntansi?.format_invoice || FORMAT_INVOICE_BAWAAN;
+  return periksaFormatInvoice(f) ? '—' : nomorInvoice(f, tanggal, (K.termin || []).map((t) => t.no_invoice));
+}
 const NAMA_BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 export const NAMA_BULAN_PANJANG = NAMA_BULAN;
 export const bulanDari = (t) => String(t).slice(0, 7) + '-01';
@@ -103,6 +126,7 @@ function keadaanAwal() {
     akun: [], rekening: [], kas_transaksi: [], transfer: [], jurnal: [], jurnal_baris: [], pemetaan_jurnal: PEMETAAN.map((m) => ({...m})),
     tutup_buku: [], tutup_buku_riwayat: [], akuntansi: {...AKUNTANSI_BAWAAN}, audit_log: [], perusahaan: {id: 'lokal', data: {}},
     peran: [], notifikasi_status: [], seq: {jurnal: 0, baris: 0, audit: 0, riwayat: 0},
+    kontrak_klien: [], kontrak_addendum: [], termin: [], penerimaan: [],
   };
   const id = {};
   for (const [kode, nama] of AKUN_STANDAR) {
@@ -114,10 +138,14 @@ function keadaanAwal() {
   return s;
 }
 
-export function mesinLokal({email = 'Mode demo', hariIni}) {
+export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => []}) {
   let K;
   try { K = JSON.parse(localStorage.getItem(KUNCI)); } catch { K = null; }
   if (!K?.akun?.length) K = keadaanAwal();
+  // Data demo dari sebelum Tahap 3.
+  for (const t of TABEL_KONTRAK) K[t] ||= [];
+  K.akuntansi = {...AKUNTANSI_BAWAAN, ...K.akuntansi};
+  for (const m of PEMETAAN) if (!K.pemetaan_jurnal.some((x) => x.jenis === m.jenis && x.urut === m.urut)) K.pemetaan_jurnal.push({...m});
   const tulis = () => localStorage.setItem(KUNCI, JSON.stringify(K));
   tulis();
 
@@ -288,6 +316,118 @@ export function mesinLokal({email = 'Mode demo', hariIni}) {
     return k;
   };
 
+
+  // ---------- Tahap 3: kontrak, termin, invoice, penerimaan (aturan sama dengan 3-kontrak.sql) ----------
+  const kontrakDari = (s, id) => s.kontrak_klien.find((x) => x.id === id);
+  const NILAI = ['dpp', 'ppn', 'ret_jasa', 'ret_titipan', 'tagihan', 'titipan'];
+  const hitungBaris = (s, t) => {
+    const v = hitungTermin(t, kontrakDari(s, t.kontrak_id));
+    Object.assign(t, {dpp: v.dpp, ppn: v.ppn, ret_jasa: v.ret_jasa, ret_titipan: v.ret_titipan, tagihan: v.tagihan});
+  };
+  const ubahTermin = (s, t, perubahan) => {
+    const lama = {...t};
+    Object.assign(t, perubahan);
+    hitungBaris(s, t);
+    if (lama.no_invoice && !s.pulihkan && NILAI.some((k) => lama[k] !== t[k])) {
+      Object.assign(t, lama);
+      throw new Error((lama.jenis === 'retensi' ? 'Retensi' : 'Termin ke-' + lama.ke) + ' sudah ditagih (invoice ' + lama.no_invoice + '), jadi nilainya tidak bisa diubah lagi.');
+    }
+    audit(s, 'termin', 'update', lama, {...t});
+  };
+  const tambahTermin = (s, d) => {
+    const t = {id: idBaru(), addendum_id: null, jenis: 'termin', ke: null, milestone: null, jasa: 0, titipan: 0, perkiraan_tagih: null,
+      no_invoice: null, tgl_invoice: null, jatuh_tempo: null, rekening_id: null, dibuat: sekarang(), dibuat_oleh: email, ...d};
+    hitungBaris(s, t);
+    s.termin.push(t);
+    audit(s, 'termin', 'insert', null, {...t});
+    return t;
+  };
+  const hapusTerminDi = (s, t) => { s.termin = s.termin.filter((x) => x.id !== t.id); audit(s, 'termin', 'delete', t, null); };
+  const susunRetensi = (s, kid) => {
+    const k = kontrakDari(s, kid);
+    for (const t of s.termin.filter((x) => x.kontrak_id === kid && x.jenis === 'termin')) ubahTermin(s, t, {});
+    const {jasa, titipan} = isiRetensi(s.termin.filter((x) => x.kontrak_id === kid), k);
+    const r = s.termin.find((x) => x.kontrak_id === kid && x.jenis === 'retensi');
+    const cair = tglPencairanRetensi(k);
+    if (jasa + titipan === 0) {
+      if (r) {
+        if (r.no_invoice) throw new Error('Retensi sudah ditagih (invoice ' + r.no_invoice + '), jadi retensi tidak bisa dihapus.');
+        hapusTerminDi(s, r);
+      }
+    } else if (!r) tambahTermin(s, {kontrak_id: kid, jenis: 'retensi', milestone: 'Retensi', jasa, titipan, perkiraan_tagih: cair});
+    else ubahTermin(s, r, {jasa, titipan, perkiraan_tagih: cair});
+  };
+  const nomoriTermin = (s, kid) => {
+    s.termin.filter((x) => x.kontrak_id === kid && x.jenis === 'termin').sort((a, b) => (a.ke ?? 1e9) - (b.ke ?? 1e9) || String(a.dibuat).localeCompare(String(b.dibuat)))
+      .forEach((t, i) => { if (t.ke !== i + 1) ubahTermin(s, t, {ke: i + 1}); });
+  };
+  const cekTotal = (s, kid) => {
+    const k = kontrakDari(s, kid), add = s.kontrak_addendum.filter((a) => a.kontrak_id === kid);
+    const tj = k.nilai_jasa + add.reduce((x, a) => x + a.tambah_jasa, 0), tt = k.nilai_titipan + add.reduce((x, a) => x + a.tambah_titipan, 0);
+    if (tj <= 0) throw new Error('Nilai jasa setelah addendum harus lebih dari 0.');
+    if (tt < 0) throw new Error('Nilai titipan setelah addendum tidak boleh minus.');
+    const rows = s.termin.filter((x) => x.kontrak_id === kid && x.jenis === 'termin');
+    if (!rows.length) throw new Error('Jadwal termin wajib diisi (minimal 1 termin).');
+    if (rows.some((t) => t.jasa + t.titipan <= 0)) throw new Error('Setiap termin harus bernilai lebih dari 0.');
+    const sj = rows.reduce((x, t) => x + t.jasa, 0), st = rows.reduce((x, t) => x + t.titipan, 0);
+    if (sj !== tj || st !== tt) throw new Error('Total termin harus 100% dari nilai kontrak. Porsi jasa Rp ' + fmt(sj) + ' dari Rp ' + fmt(tj) + ', porsi titipan Rp ' + fmt(st) + ' dari Rp ' + fmt(tt) + '.');
+  };
+  const angkaAtauNull = (v) => (v == null || v === '' ? null : +v);
+  const simpanKontrakDi = (s, id, d, termin) => {
+    const lama = id ? kontrakDari(s, id) : null;
+    if (id && !lama) throw new Error('Kontrak tidak ditemukan.');
+    if (!proyek().includes(d.proyek_kode)) throw new Error('Proyek wajib dipilih.');
+    const ada = !!lama && s.termin.some((t) => t.kontrak_id === id && t.no_invoice);
+    if (ada && (lama.ppn !== d.ppn || lama.retensi_bp !== (d.retensi_bp || 0) || lama.proyek_kode !== d.proyek_kode)) {
+      throw new Error('Sudah ada tagihan yang terbit: proyek, perlakuan PPN, dan retensi tidak bisa diubah lagi.');
+    }
+    const tarif = d.ppn === 'tidak' ? 0 : lama && lama.ppn === d.ppn && lama.tarif_ppn_bp > 0 ? lama.tarif_ppn_bp : s.akuntansi.tarif_ppn_bp;
+    const k = {...(lama || {id: idBaru(), dibuat: sekarang(), dibuat_oleh: email})};
+    for (const c of KOLOM_KONTRAK) k[c] = d[c] === '' || d[c] === undefined ? null : d[c];
+    Object.assign(k, {no_kontrak: String(k.no_kontrak || '').trim(), nilai_jasa: +k.nilai_jasa, nilai_titipan: +(k.nilai_titipan || 0), ppn: k.ppn || 'tidak', retensi_bp: +(k.retensi_bp || 0), tarif_ppn_bp: tarif,
+      masa_pemeliharaan_hari: angkaAtauNull(k.masa_pemeliharaan_hari), garansi_bulan: angkaAtauNull(k.garansi_bulan)});
+    const salah = periksaKontrak(k, termin.map((t) => ({...t, jenis: 'termin', jasa: +t.jasa, titipan: +t.titipan})),
+      {kontrak: s.kontrak_klien, proyek: proyek(), profil: s.perusahaan.data, addendum: s.kontrak_addendum.filter((a) => a.kontrak_id === k.id)});
+    if (salah.length) throw new Error(salah[0]);
+    const salin = lama && {...lama};
+    if (lama) Object.assign(lama, k); else s.kontrak_klien.push(k);
+    audit(s, 'kontrak_klien', lama ? 'update' : 'insert', salin, {...k});
+    const ids = [];
+    termin.forEach((t, i) => {
+      const ada = t.id && s.termin.find((x) => x.id === t.id && x.kontrak_id === k.id && x.jenis === 'termin');
+      const isi = {ke: i + 1, milestone: t.milestone || null, jasa: +t.jasa, titipan: +t.titipan, perkiraan_tagih: t.perkiraan_tagih || null};
+      ids.push(ada ? (ubahTermin(s, ada, isi), ada.id) : tambahTermin(s, {kontrak_id: k.id, ...isi}).id);
+    });
+    const buang = s.termin.filter((x) => x.kontrak_id === k.id && x.jenis === 'termin' && !ids.includes(x.id));
+    if (buang.some((x) => x.no_invoice)) throw new Error('Termin yang sudah ditagih tidak bisa dihapus dari jadwal.');
+    for (const x of buang) hapusTerminDi(s, x);
+    susunRetensi(s, k.id);
+    cekTotal(s, k.id);
+    return k;
+  };
+  const jurnalInvoice = (s, t) => {
+    const k = kontrakDari(s, t.kontrak_id);
+    if (!t.no_invoice || s.akuntansi.basis !== 'akrual') return jurnalOtomatis(s, 'invoice', t.id, null);
+    jurnalOtomatis(s, 'invoice', t.id, t.tgl_invoice, 'Invoice ' + t.no_invoice + ' · ' + k.proyek_kode,
+      [{jenis: 'invoice_piutang', jumlah: t.tagihan}, {jenis: 'invoice_pendapatan', jumlah: t.dpp - t.ret_jasa}, {jenis: 'invoice_titipan', jumlah: t.titipan - t.ret_titipan}, {jenis: 'invoice_ppn', jumlah: t.ppn}],
+      {AKUN_PENDAPATAN: akunKode(s, k.akun_pendapatan).id}, k.proyek_kode);
+  };
+  const jurnalPenerimaan = (s, p) => {
+    const t = s.termin.find((x) => x.id === p.termin_id), k = kontrakDari(s, t.kontrak_id);
+    const rincian = [{jenis: 'terima_rekening', jumlah: p.jumlah}, {jenis: 'terima_potongan', jumlah: p.potongan_pajak}];
+    if (s.akuntansi.basis === 'akrual') rincian.push({jenis: 'terima_piutang', jumlah: p.jumlah + p.potongan_pajak});
+    else rincian.push({jenis: 'terima_pendapatan', jumlah: p.alok_pendapatan}, {jenis: 'terima_titipan', jumlah: p.alok_titipan}, {jenis: 'terima_ppn', jumlah: p.alok_ppn});
+    jurnalOtomatis(s, 'penerimaan', p.id, p.tanggal, 'Penerimaan ' + t.no_invoice + ' · ' + k.proyek_kode + (t.jenis === 'retensi' ? ' retensi' : ' termin ' + t.ke),
+      rincian, {REKENING: p.rekening_id ? akunRekening(s, p.rekening_id)?.id : null, AKUN_PENDAPATAN: akunKode(s, k.akun_pendapatan).id}, k.proyek_kode);
+  };
+  const urutBuat = (a, b) => String(a.dibuat).localeCompare(String(b.dibuat)) || String(a.id).localeCompare(String(b.id));
+  const terakhir = (s, terminId) => s.penerimaan.filter((x) => x.termin_id === terminId).sort(urutBuat).at(-1);
+  const waktuBaru = (s) => {
+    const maks = s.penerimaan.reduce((m, x) => (x.dibuat > m ? x.dibuat : m), '');
+    let w = sekarang();
+    if (w <= maks) w = new Date(Date.parse(maks) + 1).toISOString();
+    return w;
+  };
   return {
     mode: 'lokal',
     async muat() { return {...structuredClone(K), siap: true}; },
@@ -407,6 +547,10 @@ export function mesinLokal({email = 'Mode demo', hariIni}) {
         if (!['kas', 'akrual'].includes(baru.basis)) throw new Error('Basis tidak dikenal.');
         if (!(baru.bulan_awal_buku >= 1 && baru.bulan_awal_buku <= 12)) throw new Error('Bulan awal tahun buku tidak sah.');
         baru.batas_kapitalisasi = bulat(baru.batas_kapitalisasi, 'Batas kapitalisasi', {min: 0});
+        if (!Number.isInteger(baru.tarif_ppn_bp) || baru.tarif_ppn_bp < 0 || baru.tarif_ppn_bp > 9999) throw new Error('Tarif PPN harus 0 sampai 99,99%.');
+        const gf = periksaFormatInvoice(baru.format_invoice);
+        if (gf) throw new Error(gf);
+        if (!Number.isInteger(baru.jatuh_tempo_hari) || baru.jatuh_tempo_hari < 0 || baru.jatuh_tempo_hari > 365) throw new Error('Jatuh tempo bawaan harus 0 sampai 365 hari.');
         if (baru.basis !== lama.basis && +hariIni().slice(5, 7) !== lama.bulan_awal_buku && s.jurnal.length) {
           throw new Error('Basis pengakuan pendapatan hanya bisa diubah di awal periode buku (bulan pertama tahun buku).');
         }
@@ -431,6 +575,167 @@ export function mesinLokal({email = 'Mode demo', hariIni}) {
     async hapusPeran(id) { return ubah((s) => { const p = s.peran.find((x) => x.id === id); s.peran = s.peran.filter((x) => x.id !== id); if (p) audit(s, 'peran', 'delete', p, null); }); },
     async pengguna() { return []; },
     async aturPengguna() { throw new Error('Pengguna hanya ada bila memakai Supabase.'); },
+    // ---------- Tahap 3 ----------
+    async simpanKontrak(id, d, termin) { return ubah((s) => simpanKontrakDi(s, id, d, termin)); },
+    async hapusKontrak(id) {
+      return ubah((s) => {
+        const k = kontrakDari(s, id);
+        if (!k) return;
+        if (s.termin.some((t) => t.kontrak_id === id && t.no_invoice)) throw new Error('Kontrak yang sudah punya invoice tidak bisa dihapus.');
+        for (const t of s.termin.filter((x) => x.kontrak_id === id)) hapusTerminDi(s, t);
+        for (const a of s.kontrak_addendum.filter((x) => x.kontrak_id === id)) { s.kontrak_addendum = s.kontrak_addendum.filter((x) => x.id !== a.id); audit(s, 'kontrak_addendum', 'delete', a, null); }
+        s.kontrak_klien = s.kontrak_klien.filter((x) => x.id !== id);
+        audit(s, 'kontrak_klien', 'delete', k, null);
+      });
+    },
+    async simpanAddendum(kid, id, d, termin = []) {
+      return ubah((s) => {
+        if (!kontrakDari(s, kid)) throw new Error('Kontrak tidak ditemukan.');
+        if (!String(d.no || '').trim()) throw new Error('No. addendum wajib diisi.');
+        if (!d.tanggal) throw new Error('Tanggal addendum wajib diisi.');
+        if (s.kontrak_addendum.some((a) => a.kontrak_id === kid && a.id !== id && a.no.trim().toLowerCase() === d.no.trim().toLowerCase())) throw new Error('No. addendum "' + d.no.trim() + '" sudah dipakai di kontrak ini.');
+        if (id) {
+          const a = s.kontrak_addendum.find((x) => x.id === id && x.kontrak_id === kid);
+          if (!a) throw new Error('Addendum tidak ditemukan.');
+          const lama = {...a};
+          Object.assign(a, {no: d.no.trim(), tanggal: d.tanggal, selesai_baru: d.selesai_baru || null, uraian: d.uraian || null, file: d.file || null});
+          audit(s, 'kontrak_addendum', 'update', lama, {...a});
+          return a;
+        }
+        if (!['tambah', 'sesuaikan'].includes(d.cara_termin)) throw new Error('Pilih cara menyesuaikan termin.');
+        const tj = bulat(d.tambah_jasa || 0, 'Perubahan nilai jasa'), tt = bulat(d.tambah_titipan || 0, 'Perubahan nilai titipan');
+        const a = {id: idBaru(), kontrak_id: kid, no: d.no.trim(), tanggal: d.tanggal, tambah_jasa: tj, tambah_titipan: tt, selesai_baru: d.selesai_baru || null,
+          uraian: d.uraian || null, file: d.file || null, cara_termin: d.cara_termin, penyesuaian: null, dibuat: sekarang(), dibuat_oleh: email};
+        s.kontrak_addendum.push(a);
+        if (a.cara_termin === 'tambah') {
+          if (tj < 0 || tt < 0) throw new Error('Pengurangan nilai kontrak memakai pilihan "sesuaikan termin yang belum ditagih".');
+          let urut = Math.max(0, ...s.termin.filter((x) => x.kontrak_id === kid && x.jenis === 'termin').map((x) => x.ke || 0));
+          let sj = 0, st = 0;
+          for (const t of termin) {
+            tambahTermin(s, {kontrak_id: kid, addendum_id: a.id, ke: ++urut, milestone: t.milestone || null, jasa: bulat(t.jasa, 'Porsi jasa', {min: 0}), titipan: bulat(t.titipan, 'Porsi titipan', {min: 0}), perkiraan_tagih: t.perkiraan_tagih || null});
+            sj += +t.jasa; st += +t.titipan;
+          }
+          if ((tj || tt) && (sj !== tj || st !== tt)) throw new Error('Termin tambahan harus sama dengan perubahan nilai addendum (jasa Rp ' + fmt(tj) + ', titipan Rp ' + fmt(tt) + ').');
+        } else {
+          a.penyesuaian = [];
+          for (const x of termin) {
+            const t = s.termin.find((y) => y.id === x.id && y.kontrak_id === kid && y.jenis === 'termin');
+            if (!t) throw new Error('Termin yang disesuaikan tidak ditemukan.');
+            if (t.no_invoice) throw new Error('Termin ke-' + t.ke + ' sudah ditagih dan tidak bisa disesuaikan.');
+            a.penyesuaian.push({id: t.id, delta_jasa: x.jasa - t.jasa, delta_titipan: x.titipan - t.titipan});
+            ubahTermin(s, t, {jasa: bulat(x.jasa, 'Porsi jasa', {min: 0}), titipan: bulat(x.titipan, 'Porsi titipan', {min: 0})});
+          }
+        }
+        audit(s, 'kontrak_addendum', 'insert', null, {...a});
+        susunRetensi(s, kid);
+        cekTotal(s, kid);
+        return a;
+      });
+    },
+    async hapusAddendum(id) {
+      return ubah((s) => {
+        const a = s.kontrak_addendum.find((x) => x.id === id);
+        if (!a) throw new Error('Addendum tidak ditemukan.');
+        if (s.kontrak_addendum.some((x) => x.kontrak_id === a.kontrak_id && urutBuat(x, a) > 0)) throw new Error('Hanya addendum terakhir yang bisa dihapus.');
+        if (a.cara_termin === 'tambah') {
+          const rows = s.termin.filter((t) => t.addendum_id === a.id);
+          if (rows.some((t) => t.no_invoice)) throw new Error('Termin dari addendum ini sudah ditagih, jadi addendum tidak bisa dihapus.');
+          for (const t of rows) hapusTerminDi(s, t);
+        } else {
+          for (const x of a.penyesuaian || []) {
+            const t = s.termin.find((y) => y.id === x.id);
+            if (!t) continue;
+            if (t.no_invoice) throw new Error('Termin yang disesuaikan addendum ini sudah ditagih, jadi addendum tidak bisa dihapus.');
+            ubahTermin(s, t, {jasa: t.jasa - x.delta_jasa, titipan: t.titipan - x.delta_titipan});
+          }
+        }
+        s.kontrak_addendum = s.kontrak_addendum.filter((x) => x.id !== a.id);
+        audit(s, 'kontrak_addendum', 'delete', a, null);
+        nomoriTermin(s, a.kontrak_id);
+        susunRetensi(s, a.kontrak_id);
+        cekTotal(s, a.kontrak_id);
+      });
+    },
+    async terbitkanInvoice(terminId, {tanggal, jatuh_tempo, rekening_id}) {
+      return ubah((s) => {
+        const t = s.termin.find((x) => x.id === terminId);
+        if (!t) throw new Error('Tagihan tidak ditemukan.');
+        const k = kontrakDari(s, t.kontrak_id);
+        if (!tanggal) throw new Error('Tanggal invoice wajib diisi.');
+        if (!jatuh_tempo || jatuh_tempo < tanggal) throw new Error('Jatuh tempo wajib diisi dan tidak boleh sebelum tanggal invoice.');
+        if (!s.rekening.some((r) => r.id === rekening_id && r.aktif)) throw new Error('Rekening tujuan wajib dipilih (rekening aktif).');
+        if (t.tagihan <= 0) throw new Error('Nilai tagihan 0; tidak ada yang bisa ditagih.');
+        if (t.jenis === 'retensi') {
+          const cair = tglPencairanRetensi(k);
+          if (!cair) throw new Error('Isi tanggal serah terima di kontrak dulu; retensi bisa ditagih setelah masa pemeliharaan selesai.');
+          if (tanggal < cair) throw new Error('Retensi baru bisa ditagih mulai ' + cair.split('-').reverse().join('-') + '.');
+        }
+        cekBuka(s, tanggal);
+        const lama = {...t};
+        if (t.no_invoice) {
+          if (s.penerimaan.some((p) => p.termin_id === t.id)) throw new Error('Invoice yang sudah ada penerimaannya tidak bisa diubah.');
+          cekBuka(s, t.tgl_invoice);
+          Object.assign(t, {tgl_invoice: tanggal, jatuh_tempo, rekening_id});
+        } else {
+          const f = s.akuntansi.format_invoice;
+          const galatFormat = periksaFormatInvoice(f);
+          if (galatFormat) throw new Error('Format nomor invoice di Pengaturan → Akuntansi: ' + galatFormat);
+          Object.assign(t, {no_invoice: nomorInvoice(f, tanggal, s.termin.map((x) => x.no_invoice)), tgl_invoice: tanggal, jatuh_tempo, rekening_id});
+        }
+        audit(s, 'termin', 'update', lama, {...t});
+        jurnalInvoice(s, t);
+        return t.no_invoice;
+      });
+    },
+    async batalInvoice(terminId) {
+      return ubah((s) => {
+        const t = s.termin.find((x) => x.id === terminId);
+        if (!t?.no_invoice) throw new Error('Tagihan ini belum punya invoice.');
+        if (s.penerimaan.some((p) => p.termin_id === t.id)) throw new Error('Invoice yang sudah ada penerimaannya tidak bisa dibatalkan.');
+        cekBuka(s, t.tgl_invoice);
+        const lama = {...t};
+        Object.assign(t, {no_invoice: null, tgl_invoice: null, jatuh_tempo: null, rekening_id: null});
+        audit(s, 'termin', 'update', lama, {...t});
+        jurnalInvoice(s, t);
+      });
+    },
+    async simpanPenerimaan(id, d) {
+      return ubah((s) => {
+        const lama = id ? s.penerimaan.find((x) => x.id === id) : null;
+        if (id && !lama) throw new Error('Penerimaan tidak ditemukan.');
+        const t = s.termin.find((x) => x.id === (lama?.termin_id || d.termin_id));
+        if (!t) throw new Error('Tagihan tidak ditemukan.');
+        if (!t.no_invoice) throw new Error('Terbitkan invoice dulu sebelum mencatat penerimaan.');
+        if (!d.tanggal) throw new Error('Tanggal penerimaan wajib diisi.');
+        const jumlah = bulat(d.jumlah || 0, 'Jumlah diterima', {min: 0}), pot = bulat(d.potongan_pajak || 0, 'Potongan pajak', {min: 0});
+        if (jumlah + pot <= 0) throw new Error('Isi jumlah diterima dan/atau potongan pajak (lebih dari 0).');
+        if (jumlah > 0 && !s.rekening.some((r) => r.id === d.rekening_id && r.aktif)) throw new Error('Rekening penerima wajib dipilih (rekening aktif).');
+        if (lama && terakhir(s, t.id)?.id !== lama.id) throw new Error('Hanya penerimaan terakhir yang bisa diubah. Hapus dulu penerimaan sesudahnya.');
+        const sebelum = s.penerimaan.filter((x) => x.termin_id === t.id && x.id !== id).reduce((x, p) => x + p.jumlah + p.potongan_pajak, 0);
+        if (sebelum + jumlah + pot > t.tagihan) throw new Error('Jumlah diterima + potongan pajak melebihi sisa tagihan (sisa Rp ' + fmt(t.tagihan - sebelum) + ').');
+        if (lama) cekBuka(s, lama.tanggal);
+        cekBuka(s, d.tanggal);
+        const p = {...(lama || {id: idBaru(), termin_id: t.id, dibuat: waktuBaru(s), dibuat_oleh: email}), tanggal: d.tanggal, jumlah, potongan_pajak: pot,
+          rekening_id: jumlah > 0 ? d.rekening_id : null, bukti_potong: d.bukti_potong || null, bukti_transfer: d.bukti_transfer || null, catatan: d.catatan || null,
+          ...alokasiPenerimaan(t, sebelum, jumlah + pot)};
+        const salin = lama && {...lama};
+        if (lama) Object.assign(lama, p); else s.penerimaan.push(p);
+        audit(s, 'penerimaan', lama ? 'update' : 'insert', salin, {...p});
+        jurnalPenerimaan(s, p);
+        return p;
+      });
+    },
+    async hapusPenerimaan(id) {
+      return ubah((s) => {
+        const p = s.penerimaan.find((x) => x.id === id);
+        if (!p) return;
+        if (terakhir(s, p.termin_id)?.id !== p.id) throw new Error('Hanya penerimaan terakhir yang bisa dihapus. Hapus dulu penerimaan sesudahnya.');
+        cekBuka(s, p.tanggal);
+        jurnalOtomatis(s, 'penerimaan', p.id, null);
+        s.penerimaan = s.penerimaan.filter((x) => x.id !== id);
+        audit(s, 'penerimaan', 'delete', p, null);
+      });
+    },
     async statusNotifikasi() { return K.notifikasi_status.slice(); },
     async aturStatusNotifikasi(daftar) {
       for (const st of daftar) {
@@ -470,8 +775,14 @@ export function mesinLokal({email = 'Mode demo', hariIni}) {
           const baru = buatJurnal(s, {id: j.id, tanggal: j.tanggal, uraian: j.uraian, sumber: 'manual', bukti: j.bukti});
           for (const b of j.baris || []) tambahBaris(s, {...b, akun_id: peta(b.akun_id), jurnal_id: baru.id});
         }
-        s.tutup_buku = (p.tutup_buku || []).map((t) => ({bulan: t.bulan, ditutup_oleh: email, ditutup_pada: sekarang()}));
         if (p.akuntansi) s.akuntansi = {...s.akuntansi, ...p.akuntansi};
+        s.kontrak_klien = (p.kontrak_klien || []).map((x) => ({...x}));
+        s.kontrak_addendum = (p.kontrak_addendum || []).map((x) => ({...x}));
+        s.termin = (p.termin || []).map((x) => ({...x}));
+        for (const t of s.termin) { hitungBaris(s, t); if (t.no_invoice) jurnalInvoice(s, t); }
+        s.penerimaan = (p.penerimaan || []).map((x) => ({...x})).sort(urutBuat);
+        for (const x of s.penerimaan) jurnalPenerimaan(s, x);
+        s.tutup_buku = (p.tutup_buku || []).map((t) => ({bulan: t.bulan, ditutup_oleh: email, ditutup_pada: sekarang()}));
         if (p.perusahaan) s.perusahaan.data = p.perusahaan;
       });
     },
@@ -485,6 +796,7 @@ export function cadanganDari(K) {
     akun: K.akun, rekening: K.rekening, kas_transaksi: K.kas_transaksi, transfer: K.transfer,
     jurnal_manual: K.jurnal.filter((j) => j.sumber === 'manual').map((j) => ({...j, baris: (per.get(j.id) || []).map(({akun_id, debit, kredit, proyek_kode, keterangan}) => ({akun_id, debit, kredit, proyek_kode, keterangan}))})),
     tutup_buku: K.tutup_buku.map((t) => ({bulan: t.bulan})), akuntansi: K.akuntansi, perusahaan: K.perusahaan?.data || {},
+    kontrak_klien: K.kontrak_klien || [], kontrak_addendum: K.kontrak_addendum || [], termin: K.termin || [], penerimaan: K.penerimaan || [],
   };
 }
 
@@ -509,8 +821,16 @@ export function mesinSupabase(sb) {
           semua('akun', 'kode'), semua('rekening', 'nama'), semua('kas_transaksi'), semua('transfer'), semua('jurnal', 'no'), semua('jurnal_baris'),
           semua('pemetaan_jurnal', 'jenis'), semua('tutup_buku', 'bulan'), semua('tutup_buku_riwayat'), semua('akuntansi', 'perusahaan_id'), semua('perusahaan'), semua('peran', 'nama')]);
         perusahaanId = perusahaan[0]?.id || akuntansi[0]?.perusahaan_id || null;
+        // Tahap 3: tabel kontrak; bila migrasinya belum dijalankan, menu kontrak menampilkan petunjuk.
+        let kontrak = {kontrak_siap: false, kontrak_klien: [], kontrak_addendum: [], termin: [], penerimaan: []};
+        try {
+          const [kontrak_klien, kontrak_addendum, termin, penerimaan] = await Promise.all([semua('kontrak_klien', 'tanggal'), semua('kontrak_addendum', 'tanggal'), semua('termin', 'ke'), semua('penerimaan', 'dibuat')]);
+          kontrak = {kontrak_siap: true, kontrak_klien, kontrak_addendum, termin, penerimaan};
+        } catch (e) {
+          if (!/does not exist|schema cache|Could not find/i.test(e.message)) throw e;
+        }
         return {siap: true, akun, rekening, kas_transaksi, transfer, jurnal, jurnal_baris, pemetaan_jurnal, tutup_buku, tutup_buku_riwayat,
-          akuntansi: akuntansi[0] || {...AKUNTANSI_BAWAAN}, perusahaan: perusahaan[0] || {data: {}}, peran};
+          akuntansi: {...AKUNTANSI_BAWAAN, ...akuntansi[0]}, perusahaan: perusahaan[0] || {data: {}}, peran, ...kontrak};
       } catch (e) {
         if (/does not exist|schema cache|Could not find/i.test(e.message)) return {...kosongKeuangan(), siap: false};
         throw e;
@@ -543,6 +863,19 @@ export function mesinSupabase(sb) {
     async hapusPeran(id) { cek(await sb.from('peran').delete().eq('id', id)); },
     async pengguna() { return cek(await sb.from('profiles').select('id,email,role,aktif,super_admin,peran_id,created_at').order('email')); },
     async aturPengguna(id, perubahan) { cek(await sb.from('profiles').update(perubahan).eq('id', id)); },
+    async simpanKontrak(id, d, termin) {
+      const isi = Object.fromEntries(KOLOM_KONTRAK.map((c) => [c, d[c] ?? null]));
+      return cek(await sb.rpc('simpan_kontrak', {p_id: id || null, p: isi, p_termin: termin.map(({id: tid, milestone, jasa, titipan, perkiraan_tagih}) => ({id: tid || null, milestone, jasa, titipan, perkiraan_tagih}))}));
+    },
+    async hapusKontrak(id) { cek(await sb.rpc('hapus_kontrak', {p_id: id})); },
+    async simpanAddendum(kid, id, d, termin = []) { return cek(await sb.rpc('simpan_addendum', {p_kontrak: kid, p_id: id || null, p: d, p_termin: termin})); },
+    async hapusAddendum(id) { cek(await sb.rpc('hapus_addendum', {p_id: id})); },
+    async terbitkanInvoice(terminId, {tanggal, jatuh_tempo, rekening_id}) {
+      return cek(await sb.rpc('terbitkan_invoice', {p_termin: terminId, p_tanggal: tanggal, p_jatuh_tempo: jatuh_tempo, p_rekening: rekening_id}));
+    },
+    async batalInvoice(terminId) { cek(await sb.rpc('batal_invoice', {p_termin: terminId})); },
+    async simpanPenerimaan(id, d) { return cek(await sb.rpc('simpan_penerimaan', {p_id: id || null, p: d})); },
+    async hapusPenerimaan(id) { cek(await sb.rpc('hapus_penerimaan', {p_id: id})); },
     async statusNotifikasi() {
       const {data, error} = await sb.from('notifikasi_status').select('kunci,dibaca,tunda_sampai');
       return error ? [] : data;
@@ -557,7 +890,8 @@ export function mesinSupabase(sb) {
   };
 }
 export const kosongKeuangan = () => ({akun: [], rekening: [], kas_transaksi: [], transfer: [], jurnal: [], jurnal_baris: [], pemetaan_jurnal: PEMETAAN,
-  tutup_buku: [], tutup_buku_riwayat: [], akuntansi: {...AKUNTANSI_BAWAAN}, perusahaan: {data: {}}, peran: []});
+  tutup_buku: [], tutup_buku_riwayat: [], akuntansi: {...AKUNTANSI_BAWAAN}, perusahaan: {data: {}}, peran: [],
+  kontrak_siap: false, kontrak_klien: [], kontrak_addendum: [], termin: [], penerimaan: []});
 
 // Pesan database yang teknis -> kalimat untuk pengguna.
 function terjemah(m) {
@@ -565,6 +899,10 @@ function terjemah(m) {
   if (/rekening_nama_key/.test(m)) return 'Nama rekening itu sudah dipakai.';
   if (/akun_kode_key/.test(m)) return 'Kode akun itu sudah dipakai.';
   if (/peran_nama_key/.test(m)) return 'Nama peran itu sudah dipakai.';
+  if (/kontrak_klien_no_unik/.test(m)) return 'No. kontrak itu sudah dipakai kontrak lain.';
+  if (/kontrak_addendum_no_unik/.test(m)) return 'No. addendum itu sudah dipakai di kontrak ini.';
+  if (/termin_invoice_unik/.test(m)) return 'Nomor invoice bentrok dengan invoice lain. Coba simpan lagi.';
+  if (/Could not find the function|schema cache/i.test(m)) return 'Database belum diperbarui untuk Tahap 3. Jalankan SQL 3-kontrak.sql di Supabase.';
   if (/row-level security|permission denied/i.test(m)) return 'Anda tidak punya hak untuk perubahan ini.';
   if (/foreign key/i.test(m)) return 'Data ini masih dipakai data lain, jadi tidak bisa dihapus.';
   return m;

@@ -123,7 +123,7 @@ export function renderDetailKlien(el, id) {
       tabelKecil([['Kode'], ['Proyek'], ['Status'], ['Mulai']], 'Belum ada proyek untuk klien ini.', proyek.map((p) => h('tr', null,
         h('td', {class: 'nw'}, p.kode), h('td', null, isi(p.nama)), h('td', null, pill(p.status)), h('td', {class: 'nw'}, tgl(p.mulai)))))),
     hak('kontrak') != null && h('section', {class: 'kartu'}, h('h2', null, 'Kontrak'),
-      tabelKecil([['Kode'], ['No. kontrak'], ['Tanggal'], ['Nilai total', 1], ['Diterima', 1], ['Piutang', 1]], 'Belum ada kontrak untuk klien ini.', kontrak.map((c) => h('tr', null,
+      tabelKecil([['Kode'], ['No. kontrak'], ['Tanggal'], ['Nilai total', 1], ['Diterima', 1], ['Piutang', 1]], 'Belum ada kontrak untuk klien ini.', kontrak.map((c) => h('tr', {class: 'bisa-klik', onclick: () => { location.hash = '#kontrak-' + c.id; }},
         h('td', {class: 'nw'}, c.kode), h('td', null, isi(c.no_kontrak)), h('td', {class: 'nw'}, tgl(c.tgl_kontrak)),
         h('td', {class: 'kanan'}, rpRingkas(c.total)), h('td', {class: 'kanan'}, rpRingkas(c.diterima)), h('td', {class: 'kanan'}, rpRingkas(c.piutang)))))));
 }
@@ -297,7 +297,7 @@ function bukaGabung() {
     ringkasan.replaceChildren(
       h('b', null, 'Klien utama (yang dipertahankan):'),
       ...[r.ka, r.kb].map((k) => h('label', {class: 'centang'}, h('input', {type: 'radio', name: 'g-utama', value: k.id, checked: k.id === r.utama.id, onchange: () => gambar()}), ringkasKlien(k))),
-      h('p', null, 'Yang dipindahkan ke "' + r.utama.nama + '": ' + r.proyek.length + ' proyek, ' + r.kontrak.length + ' kontrak, ' + r.kontakPindah + ' kontak. Kolom yang masih kosong pada klien utama diisi dari klien lain.'),
+      h('p', null, 'Yang dipindahkan ke "' + r.utama.nama + '": ' + r.proyek.length + ' proyek (beserta ' + r.kontrak.length + ' kontraknya), ' + r.kontakPindah + ' kontak. Kolom yang masih kosong pada klien utama diisi dari klien lain.'),
       h('p', null, 'Setelah itu klien "' + r.lain.nama + '" dihapus. Tindakan ini tidak bisa dibatalkan.'));
   };
   a.addEventListener('change', () => gambar(true)); b.addEventListener('change', () => gambar(true));
@@ -308,7 +308,7 @@ function bukaGabung() {
     tombol.disabled = true; tombol.textContent = 'Menggabungkan…';
     const pindah = (tabel, baris) => store.simpan(tabel, baris.id, bersih({...S.db[tabel].find((x) => x.id === baris.id), klien: null, klien_id: r.utama.id}));
     for (const p of r.proyek) await pindah('proyek', p);
-    for (const c of r.kontrak) await pindah('kontrak', c);
+    // Kontrak klien mengikuti proyeknya (Tahap 3), jadi cukup proyeknya yang dipindah.
     const gabungan = isiYangKosong(dataKlien(r.utama.id), dataKlien(r.lain.id));
     delete gabungan.pic; delete gabungan.hp; delete gabungan.email;
     await store.simpan('klien', r.utama.id, {...gabungan, kontak: r.kontak});

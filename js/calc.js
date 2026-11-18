@@ -1,6 +1,7 @@
 // Rumus yang di Excel ada di kolom abu-abu. Semua fungsi murni: masukan data + tanggal hari ini.
 import {TAHAP, TOLERANSI} from './schema.js';
 import {normNama, kontakDari} from './klien-util.js';
+import {ringkasPiutang, ringkasUmur} from './kontrak-util.js';
 import {aturSdm, cariJabatan, kontrakDari, dokumenDari, gajiSaatIni, gajiDari, totalGaji, peringatanPegawai, masaKerja, bawaanTimProyek, refSdm, STATUS, STATUS_PENDEK} from './sdm-util.js';
 
 export const n = (v) => (v == null || v === '' || isNaN(+v) ? 0 : +v);
@@ -19,7 +20,8 @@ const batasHari = (tgl, today, batas, label) => (!tgl ? '' : tgl < today ? 'HABI
 
 // db: {tabel: [baris]} -> salinan dengan kolom hitungan ditambahkan pada tiap baris.
 // atur: isi catatan pengaturan admin (jabatan dan parameter peringatan SDM).
-export function hitung(db, today = hariIni(), atur = {}) {
+// keu: data keuangan (kontrak klien, termin, penerimaan ada di tabel keuangan sejak Tahap 3).
+export function hitung(db, today = hariIni(), atur = {}, keu = {}) {
   const t = (nama) => db[nama] || [];
   const namaProyek = Object.fromEntries(t('proyek').map((p) => [p.kode, p.nama]));
   const np = (kode) => namaProyek[kode] ?? (kode ? 'Kode tidak ada di daftar Proyek' : '');
@@ -60,25 +62,14 @@ export function hitung(db, today = hariIni(), atur = {}) {
     return {...m, nama_proyek: np(m.kode), umur: buka && m.tanggal ? hari(today, m.tanggal) : null, lewat: buka && m.target && today > m.target ? 'LEWAT' : ''};
   });
 
-  const totalKontrak = Object.fromEntries(t('kontrak').map((k) => [k.kode, n(k.nilai_awal) + n(k.nilai_addendum)]));
-  const termin = t('termin').map((r) => {
-    const nilai = n(r.persen) * n(totalKontrak[r.kode]);
-    const diterima = n(r.diterima);
-    const sisa = nilai - diterima;
-    const lewat = r.jatuh_tempo && today > r.jatuh_tempo;
-    const status = sisa <= 0 ? 'Lunas' : !r.tgl_invoice ? 'Belum ditagih' : lewat ? (diterima > 0 ? 'Sebagian - lewat tempo' : 'Lewat tempo') : diterima > 0 ? 'Sebagian' : 'Menunggu bayar';
-    const umur = r.tgl_invoice && r.jatuh_tempo && sisa > 0 ? Math.max(0, hari(today, r.jatuh_tempo)) : null;
-    const kelompok = umur == null ? '' : umur <= 30 ? '0-30' : umur <= 60 ? '31-60' : umur <= 90 ? '61-90' : '>90';
-    return {...r, nama_proyek: np(r.kode), nilai, diterima, sisa, status, umur, kelompok};
+  // Kontrak klien: klien selalu mengikuti proyeknya.
+  const proyekByKode = Object.fromEntries(proyek.map((p) => [p.kode, p]));
+  const piutang = ringkasPiutang(keu, today);
+  const kontrak = piutang.kontrak.map((k) => {
+    const p = proyekByKode[k.proyek_kode];
+    return {...k, kode: k.proyek_kode, nama_proyek: np(k.proyek_kode), klien_ref: p?.klien_ref || null, klien: p?.klien || '', tgl_kontrak: k.tanggal};
   });
-
-  const kontrak = t('kontrak').map((k) => {
-    const tk = termin.filter((x) => x.kode === k.kode);
-    const total = totalKontrak[k.kode];
-    const ditagih = jumlah(tk.filter((x) => x.tgl_invoice), 'nilai');
-    const diterima = jumlah(tk, 'diterima');
-    return {...k, ...denganKlien(k), nama_proyek: np(k.kode), total, ditagih, diterima, piutang: ditagih - diterima, belum_ditagih: total - ditagih, pct_terbayar: total ? diterima / total : null};
-  });
+  const termin = piutang.baris.map((b) => ({...b, ringkas: undefined, kode: b.kontrak?.proyek_kode, nama_proyek: np(b.kontrak?.proyek_kode), termin_ke: b.ke, no_kontrak: b.kontrak?.no_kontrak}));
 
   const vendor = t('vendor').map((v) => {
     const dasar = n(v.nilai) * n(v.opname);
@@ -152,10 +143,7 @@ export function ringkasan(d) {
   const berjalan = d.proyek.filter((p) => p.status === 'Berjalan');
   const terbuka = d.masalah.filter((m) => m.status !== 'Selesai');
   const nilai = jumlah(d.kontrak, 'total'), diterima = jumlah(d.kontrak, 'diterima');
-  const umur = ['0-30', '31-60', '61-90', '>90'].map((k) => {
-    const rows = d.termin.filter((x) => x.kelompok === k);
-    return {kelompok: k, sisa: jumlah(rows, 'sisa'), jumlah: rows.length};
-  });
+  const umur = ringkasUmur(d.termin);
   const progresBerjalan = berjalan.filter((p) => p.progres != null);
   return {
     jumlah_kontrak: d.kontrak.length, nilai_kontrak: nilai, ditagih: jumlah(d.kontrak, 'ditagih'), diterima,

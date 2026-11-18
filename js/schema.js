@@ -156,7 +156,7 @@ export const TABEL = {
     bantuan: '', isian: [{k: 'nama', label: 'Nama', t: 'teks', wajib: true}], kolom: [['nama', 'Nama']],
   },
   kontrak: {
-    label: 'Kontrak', satuan: 'kontrak', grup: 'Keuangan', akses: 'admin', urut: 'kode',
+    label: 'Kontrak', satuan: 'kontrak', grup: 'Keuangan', akses: 'admin', urut: 'kode', tersembunyi: true, // sejak Tahap 3 di tabel kontrak_klien
     bantuan: 'Satu baris per kontrak. Setiap perubahan permintaan klien yang menambah pekerjaan dicatat sebagai addendum tertulis di kolom Nilai addendum.',
     isian: [
       {k: 'kode', label: 'Proyek', t: 'proyek', wajib: true},
@@ -174,7 +174,7 @@ export const TABEL = {
     kolom: [['kode', 'Kode'], ['nama_proyek', 'Proyek'], ['klien', 'Klien'], ['bentuk_dokumen', 'Dokumen'], ['total', 'Nilai total', 'uang'], ['ditagih', 'Ditagih', 'uang'], ['diterima', 'Diterima', 'uang'], ['piutang', 'Piutang', 'uang'], ['belum_ditagih', 'Belum ditagih', 'uang'], ['pct_terbayar', '% terbayar', 'persen']],
   },
   termin: {
-    label: 'Termin & Piutang', satuan: 'termin', grup: 'Keuangan', akses: 'admin', urut: ['kode', 'termin_ke'],
+    label: 'Termin & Piutang', satuan: 'termin', grup: 'Keuangan', akses: 'admin', urut: ['kode', 'termin_ke'], tersembunyi: true, // sejak Tahap 3 di tabel termin
     bantuan: 'Satu baris per tagihan. Nilai tagihan = % dari nilai kontrak total. Status dan umur piutang dihitung dari jatuh tempo dan jumlah diterima.',
     isian: [
       {k: 'kode', label: 'Proyek', t: 'proyek', wajib: true},

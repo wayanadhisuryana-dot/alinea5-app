@@ -5,6 +5,7 @@ import {S, muatData, bersih} from './state.js';
 import {h, idn, rp, rpRingkas, persen, tgl, kosong, isi, pill, batangProgres, FORMAT, RATA_KANAN, pesan, aman, sekali, dialog, formatUang, buangTeksPalsu} from './ui.js';
 import {MENU, menuDari, menuTampil, hak, bisaUbah, bolehAkses, bolehUbahTabel, modulAktif, namaPeran} from './akses.js';
 import {renderKas, renderMutasi, renderJurnal} from './keuangan.js';
+import {renderKontrak, renderDetailKontrak, renderPiutang, kontrakProyek} from './kontrak.js';
 import {renderPengaturan, NAMA_APLIKASI_BAWAAN, WARNA_BAWAAN, periksaCadanganOtomatis} from './pengaturan.js';
 import {lonceng, muatStatusNotifikasi, mulaiPemeriksaanHarian} from './notifikasi.js';
 import {renderKlien, renderDetailKlien, pilihKlien} from './klien.js';
@@ -18,12 +19,14 @@ const akar = document.getElementById('app');
 
 // ---------- rute ----------
 const rute = () => (location.hash.replace(/^#/, '') || 'dashboard');
-const jumlahMenu = (m) => (m.tabel && S.db[m.tabel] ? S.db[m.tabel].filter((x) => x.aktif !== false && (m.tabel !== 'barang' || (x.jenis || 'barang') === 'barang')).length : m.k === 'kas' ? S.keu.rekening.filter((r) => r.aktif).length || null : null);
+const jumlahMenu = (m) => (m.tabel && S.db[m.tabel] ? S.db[m.tabel].filter((x) => x.aktif !== false && (m.tabel !== 'barang' || (x.jenis || 'barang') === 'barang')).length : m.k === 'kas' ? S.keu.rekening.filter((r) => r.aktif).length || null : m.k === 'kontrak' ? S.keu.kontrak_klien?.length || null : null);
 // Rute -> kunci menu yang disorot.
 function menuAktif(r) {
   if (r.startsWith('sdm-')) return 'sdm';
   if (r.startsWith('klien-')) return 'klien';
   if (r.startsWith('kas')) return 'kas';
+  if (r.startsWith('kontrak')) return 'kontrak';
+  if (r.startsWith('piutang')) return 'termin';
   if (r.startsWith('barang')) return 'barang';
   if (r.startsWith('pengaturan')) return 'pengaturan';
   return MENU.find((m) => m.ke === r)?.k || null;
@@ -69,6 +72,15 @@ function render() {
   else if (r === 'kas' && hak('kas')) renderKas(utama);
   else if (r.startsWith('kas-') && hak('kas')) renderMutasi(utama, r.slice(4));
   else if (r === 'jurnal' && hak('jurnal')) renderJurnal(utama);
+  else if (r === 'kontrak' && hak('kontrak')) renderKontrak(utama);
+  else if (r.startsWith('kontrak-') && (hak('kontrak') || hak('termin'))) renderDetailKontrak(utama, r.slice(8));
+  else if (r === 'piutang' && hak('termin')) renderPiutang(utama);
+  else if (r.startsWith('piutang-') && hak('termin')) {
+    // Tautan ke satu tagihan: buka daftarnya, tampilkan dialog tagihan itu, lalu kembalikan alamat ke daftar.
+    history.replaceState(null, '', '#piutang');
+    renderPiutang(utama, r.slice(8));
+  }
+  else if (r === 't-kontrak' || r === 't-termin') { history.replaceState(null, '', r === 't-kontrak' ? '#kontrak' : '#piutang'); return render(); }
   else if (r === 'rab' && hak('rab') && modulAktif('rab')) renderSegera(utama, menuDari('rab'));
   else if (r.startsWith('segera-') && menuDari(r.slice(7)) && hak(r.slice(7))) renderSegera(utama, menuDari(r.slice(7)));
   else if (r.startsWith('pengaturan') && (hak('pengaturan') || hak('kas') || hak('jurnal') || S.user.super_admin)) renderPengaturan(utama, r.slice(11));
@@ -182,9 +194,9 @@ function renderDashboard(el) {
         k.total > 0 && k[f] > 0 && h('div', {class: 'seg ' + cls, style: {width: (k[f] / k.total * 100) + '%'}, title: label + ': ' + rp(k[f]) + ' (' + persen(k[f] / k.total) + ')'}))))));
     const maks = Math.max(1, ...r.umur.map((u) => u.sisa));
     const umur = h('div', {class: 'bagan'}, r.umur.map((u) => h('div', {class: 'bagan-baris'},
-      h('div', {class: 'bagan-kepala'}, h('span', null, (u.kelompok === '>90' ? 'Lebih dari 90' : u.kelompok) + ' hari'), h('span', null, rpRingkas(u.sisa) + ' · ' + u.jumlah + ' invoice')),
-      h('div', {class: 'batang'}, u.sisa > 0 && h('div', {class: 'seg ' + (u.kelompok === '0-30' ? 'seg-diterima' : 'seg-piutang'), style: {width: (u.sisa / maks * 100) + '%'}})))));
-    const tagihan = d.termin.filter((t) => t.tgl_invoice && t.sisa > 0).sort((a, b) => n(b.umur) - n(a.umur));
+      h('div', {class: 'bagan-kepala'}, h('span', null, u.kelompok === 'Belum jatuh tempo' ? u.kelompok : (u.kelompok === '>90' ? 'Lebih dari 90' : u.kelompok) + ' hari lewat'), h('span', null, rpRingkas(u.sisa) + ' · ' + u.jumlah + ' invoice')),
+      h('div', {class: 'batang'}, u.sisa > 0 && h('div', {class: 'seg ' + (u.kelompok === 'Belum jatuh tempo' ? 'seg-diterima' : 'seg-piutang'), style: {width: (u.sisa / maks * 100) + '%'}})))));
+    const tagihan = d.termin.filter((t) => t.no_invoice && t.sisa > 0).sort((a, b) => n(b.umur) - n(a.umur));
     el.append(h('section', {class: 'bagian'}, h('h2', null, 'Uang masuk per kontrak dan piutang'),
       h('div', {class: 'dua'},
         h('div', {class: 'kartu'}, h('h3', null, 'Bagian nilai kontrak yang sudah diterima'),
@@ -193,7 +205,7 @@ function renderDashboard(el) {
         h('div', {class: 'kartu'}, h('h3', null, 'Piutang menurut umur sejak jatuh tempo'), umur)),
       h('h3', null, 'Tagihan yang belum lunas'),
       tabelSederhana([['Proyek'], ['No. invoice'], ['Syarat tagih'], ['Jatuh tempo'], ['Sisa', 1], ['Umur (hari)', 1], ['Status']],
-        tagihan.map((t) => [t.nama_proyek, isi(t.no_invoice), isi(t.milestone), tgl(t.jatuh_tempo), rp(t.sisa), isi(t.umur), pill(t.status)]), 'Tidak ada tagihan yang menunggu pembayaran.')));
+        tagihan.map((t) => [t.nama_proyek, h('a', {href: '#piutang-' + t.id}, t.no_invoice), isi(t.milestone), tgl(t.jatuh_tempo), rp(t.sisa), t.umur > 0 ? String(t.umur) : '—', pill(t.status)]), 'Tidak ada tagihan yang menunggu pembayaran.')));
   }
 
   const urutJadwal = {'Terlambat': 0, 'Terlambat ringan': 1, 'Data belum lengkap': 2, 'Sesuai jadwal': 3, 'Selesai': 4};
@@ -320,6 +332,7 @@ function bukaForm(tabel, baris) {
   const galat = h('p', {class: 'form-galat', role: 'alert'});
   let dlg, yakin = false;
   const hapus = baris && h('button', {class: 'btn btn-bahaya', type: 'button', onclick: aman(async () => {
+    if (tabel === 'proyek' && S.d.kontrak.some((k) => k.kode === baris.kode)) throw new Error('Proyek ' + baris.kode + ' sudah punya kontrak klien, jadi tidak bisa dihapus.');
     if (!yakin) { yakin = true; hapus.textContent = 'Klik lagi untuk menghapus'; return; }
     await store.hapus(baris.id);
     await muatData(); dlg.close(); render(); pesan(def.label + ': baris dihapus.');
@@ -349,6 +362,10 @@ function bukaForm(tabel, baris) {
         return;
       }
     }
+    if (tabel === 'proyek' && baris && data.kode !== baris.kode && S.d.kontrak.some((k) => k.kode === baris.kode)) {
+      galat.textContent = 'Kode proyek tidak bisa diubah karena sudah dipakai kontrak klien ' + S.d.kontrak.filter((k) => k.kode === baris.kode).map((k) => k.no_kontrak).join(', ') + '.';
+      return;
+    }
     simpan.disabled = true; simpan.textContent = 'Menyimpan…';
     try {
       await store.simpan(tabel, baris?.id, data);
@@ -359,6 +376,7 @@ function bukaForm(tabel, baris) {
       h('label', {for: f.t === 'timproyek' ? 'f-tim-orang' : 'f-' + f.k}, f.label, f.wajib && h('span', {class: 'wajib', title: 'Wajib diisi'}, ' *')),
       buatMasukan(f, f.t === 'klien' ? S.d[tabel].find((x) => x.id === baris?.id)?.klien_ref : baris?.[f.k], tabel, ctx),
       f.bantuan && !['hp', 'email', 'npwp'].includes(f.t) && h('span', {class: 'kecil redup'}, f.bantuan)))),
+    tabel === 'proyek' && baris && (hak('kontrak') != null) && kontrakProyek(baris.kode),
     galat,
     h('div', {class: 'form-kaki'}, bisa && hapus, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, bisa ? 'Batal' : 'Tutup'), bisa && simpan));
   if (!bisa) form.querySelectorAll('input,select,textarea,.kombo button').forEach((x) => { x.disabled = true; });

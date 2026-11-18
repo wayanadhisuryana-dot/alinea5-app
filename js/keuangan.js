@@ -47,22 +47,23 @@ const catatanKunci = (t) => terkunci(K(), t) && h('div', {class: 'kotak-info'}, 
 
 // Bukti transaksi: PDF, JPG, atau PNG; batas ukuran dari Pengaturan.
 const TIPE_BUKTI = ['application/pdf', 'image/jpeg', 'image/png'];
-function pilihBukti(id, lama) {
-  const ket = h('span', {class: 'kecil redup'}, 'PDF, JPG, atau PNG, maksimal ' + ukuranFile(batasUnggah()) + '.');
-  const inp = h('input', {id, type: 'file', accept: '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png'});
+export function pilihBukti(id, lama, {label = 'Bukti', hanyaPdf = false} = {}) {
+  const TIPE = hanyaPdf ? ['application/pdf'] : TIPE_BUKTI;
+  const ket = h('span', {class: 'kecil redup'}, (hanyaPdf ? 'PDF' : 'PDF, JPG, atau PNG') + ', maksimal ' + ukuranFile(batasUnggah()) + '.');
+  const inp = h('input', {id, type: 'file', accept: hanyaPdf ? '.pdf,application/pdf' : '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png'});
   let buang = false;
   inp.addEventListener('change', () => {
     const f = inp.files[0];
     ket.classList.remove('form-galat');
     if (!f) return;
-    if (!TIPE_BUKTI.includes(f.type) || f.size > batasUnggah()) {
-      ket.textContent = !TIPE_BUKTI.includes(f.type) ? 'Hanya PDF, JPG, atau PNG.' : 'File terlalu besar (' + ukuranFile(f.size) + '). Maksimal ' + ukuranFile(batasUnggah()) + '.';
+    if (!TIPE.includes(f.type) || f.size > batasUnggah()) {
+      ket.textContent = !TIPE.includes(f.type) ? (hanyaPdf ? 'Hanya file PDF.' : 'Hanya PDF, JPG, atau PNG.') : 'File terlalu besar (' + ukuranFile(f.size) + '). Maksimal ' + ukuranFile(batasUnggah()) + '.';
       ket.classList.add('form-galat'); inp.value = '';
     } else ket.textContent = f.name + ' · ' + ukuranFile(f.size);
   });
   const lamaEl = lama && h('div', {class: 'baris-tombol'}, tombolBukti(lama), h('button', {class: 'btn btn-kecil', type: 'button', onclick: () => { buang = true; lamaEl.remove(); }}, 'Lepas bukti'));
   return {
-    el: h('div', {class: 'medan medan-lebar'}, h('label', {for: id}, 'Bukti'), lamaEl, inp, ket),
+    el: h('div', {class: 'medan medan-lebar'}, h('label', {for: id}, label), lamaEl, inp, ket),
     async ambil(folder) {
       const f = inp.files[0];
       if (!f) return buang ? null : lama || null;
@@ -257,7 +258,7 @@ export function renderMutasi(el, rid) {
   const semua = mutasiRekening(K(), rid);
   const dari = h('input', {type: 'date', id: 'mut-dari', 'aria-label': 'Dari tanggal'}), sampai = h('input', {type: 'date', id: 'mut-sampai', 'aria-label': 'Sampai tanggal'});
   const badan = h('tbody'), ringkas = h('p', {class: 'redup kecil'});
-  const SUMBER = {saldo_awal: 'Saldo awal', kas: 'Kas umum', transfer: 'Transfer', manual: 'Jurnal manual'};
+  const SUMBER = SUMBER_JURNAL;
   const pilihBaris = () => semua.filter((m) => (!dari.value || m.tanggal >= dari.value) && (!sampai.value || m.tanggal <= sampai.value));
   const gambar = () => {
     const rows = pilihBaris();
@@ -294,6 +295,8 @@ export function bukaSumber(sumber, sumberId, jurnalId) {
   if (sumber === 'kas') { const k = K().kas_transaksi.find((x) => x.id === sumberId); if (k) return bukaFormKas(k); }
   if (sumber === 'transfer') { const t = K().transfer.find((x) => x.id === sumberId); if (t) return bukaFormTransfer(t); }
   if (sumber === 'saldo_awal') { const r = rekeningDari(sumberId); if (r) return bukaFormRekening(r); }
+  if (sumber === 'penerimaan') { const p = K().penerimaan?.find((x) => x.id === sumberId); if (p) { location.hash = '#piutang-' + p.termin_id; return; } }
+  if (sumber === 'invoice' && K().termin?.some((x) => x.id === sumberId)) { location.hash = '#piutang-' + sumberId; return; }
   const j = daftarJurnal(K()).find((x) => x.id === jurnalId);
   if (j) bukaFormJurnal(j);
 }
@@ -688,3 +691,6 @@ function bukaKembali(b) {
     kaki(h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, 'Batal'), simpan)));
 }
 
+
+// Dipakai halaman Kontrak dan Termin & Piutang.
+export {medan, teks, tanggal, pilihan, uang, centang, kaki, tombolHapus, catatanKunci, batasUnggah, opsiProyek, namaRekening};

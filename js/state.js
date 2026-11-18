@@ -25,7 +25,7 @@ export async function muatData(sudahSinkron = false) {
   S.profil = S.keu.perusahaan?.data || {};
   terapkanOpsi(S.pengaturan?.data?.opsi);
   aturZona(S.pengaturan?.data?.zona_waktu);
-  S.d = hitung(S.db, hariIni(), S.pengaturan?.data);
+  S.d = hitung(S.db, hariIni(), S.pengaturan?.data, S.keu);
   if (!sudahSinkron) {
     const a = bisaUbah('sdm') && await sinkronDirektori();
     const b = bisaUbah('vendor') && await sinkronVendor();
@@ -73,4 +73,8 @@ export const kosongNilai = (v) => v == null || v === '';
 export const bersih = (data) => Object.fromEntries(Object.entries(data).filter(([k, v]) => k !== 'id' && !kosongNilai(v)));
 export async function segarkan() { await muatData(); S.render(); }
 // Hanya data keuangan (lebih cepat daripada memuat ulang semuanya).
-export async function segarkanKeuangan() { S.keu = await store.keu.muat(); S.profil = S.keu.perusahaan?.data || {}; S.render(); }
+export async function segarkanKeuangan() {
+  S.keu = await store.keu.muat(); S.profil = S.keu.perusahaan?.data || {};
+  S.d = hitung(S.db, hariIni(), S.pengaturan?.data, S.keu);
+  S.render();
+}

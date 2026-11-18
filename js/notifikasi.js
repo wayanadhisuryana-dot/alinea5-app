@@ -6,7 +6,8 @@ import {store} from './store.js';
 import {hariIni} from './calc.js';
 import {hak, modulAktif} from './akses.js';
 import {kontrakDari, STATUS, tambahHari, selisihHari} from './sdm-util.js';
-import {h, tgl, aman, pesan} from './ui.js';
+import {h, tgl, rp, aman, pesan} from './ui.js';
+import {dendaAlinea} from './kontrak-util.js';
 
 // hari: berapa hari sebelum tanggal jatuh tempo pengingat mulai muncul.
 // sdm: kunci parameter SDM lama yang ikut disamakan (dipakai juga oleh peringatan di tabel SDM).
@@ -18,6 +19,9 @@ export const JENIS_NOTIF = {
   aset: {label: 'Lisensi / pajak aset akan habis', hari: 30, menu: 'aset', modul: 'aset'},
   hutang_lain: {label: 'Jatuh tempo hutang lain', hari: 14, menu: 'hutang_lain', modul: 'hutang_lain'},
   termin: {label: 'Jatuh tempo tagihan klien', hari: 7, menu: 'termin'},
+  tenggat_proyek: {label: 'Tenggat pekerjaan proyek di kontrak', hari: 14, menu: 'kontrak'},
+  retensi: {label: 'Retensi sudah bisa ditagih', hari: 0, menu: 'termin'},
+  garansi: {label: 'Masa garansi berakhir', hari: 30, menu: 'kontrak'},
 };
 
 // Pengaturan notifikasi efektif: {jenis: {aktif, hari}}. Untuk jenis SDM, batas hari diambil dari parameter SDM.
@@ -51,7 +55,20 @@ export function hitungNotifikasi(today = hariIni()) {
     if (boleh('legal')) for (const x of d.legal || []) tambah('legal', x.id, x.berlaku_sd, x.dokumen + ' habis berlaku', '#t-legal');
     if (boleh('aset')) for (const x of d.aset || []) tambah('aset', x.id, x.lisensi_sd, 'Lisensi / pajak ' + x.nama + ' habis', '#t-aset');
     if (boleh('hutang_lain')) for (const x of d.hutang_lain || []) if (x.sisa > 0) tambah('hutang_lain', x.id, x.jatuh_tempo, 'Hutang ' + x.kreditur + ' jatuh tempo', '#t-hutang_lain');
-    if (boleh('termin')) for (const x of d.termin || []) if (x.tgl_invoice && x.sisa > 0) tambah('termin', x.id, x.jatuh_tempo, 'Tagihan ' + (x.no_invoice || 'termin ' + x.termin_ke) + ' · ' + (x.nama_proyek || x.kode) + ' jatuh tempo', '#t-termin');
+    if (boleh('termin')) for (const x of d.termin || []) if (x.no_invoice && x.sisa > 0) {
+      tambah('termin', x.id, x.jatuh_tempo, 'Tagihan ' + x.no_invoice + ' · ' + (x.nama_proyek || x.kode) + (x.jatuh_tempo < today ? ' lewat jatuh tempo, sisa ' + rp(x.sisa) : ' jatuh tempo'), '#piutang-' + x.id);
+    }
+    if (boleh('retensi')) for (const x of d.termin || []) if (x.jenis === 'retensi' && !x.no_invoice && x.tagihan > 0) {
+      tambah('retensi', x.id, x.tgl_pencairan, 'Retensi ' + (x.nama_proyek || x.kode) + ' ' + rp(x.tagihan) + ' bisa ditagih', '#piutang-' + x.id);
+    }
+    const proyekSelesai = new Set((d.proyek || []).filter((p) => ['Selesai', 'Batal'].includes(p.status)).map((p) => p.kode));
+    for (const k of d.kontrak || []) {
+      if (boleh('tenggat_proyek') && !k.tgl_serah_terima && !proyekSelesai.has(k.proyek_kode)) {
+        const denda = dendaAlinea(k, k.selesai_berlaku, k.total, today);
+        tambah('tenggat_proyek', k.id, k.selesai_berlaku, 'Tenggat ' + (k.nama_proyek || k.kode) + ' (' + k.no_kontrak + ')' + (denda?.denda ? ' terlewat · potensi denda ' + rp(denda.denda) : ''), '#kontrak-' + k.id);
+      }
+      if (boleh('garansi')) tambah('garansi', k.id, k.garansi_akhir, 'Garansi ' + (k.nama_proyek || k.kode) + ' (' + k.no_kontrak + ') berakhir', '#kontrak-' + k.id);
+    }
   }
   return hasil.sort((a, b) => a.tanggal.localeCompare(b.tanggal));
 }

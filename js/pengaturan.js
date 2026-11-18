@@ -1,4 +1,5 @@
 // Halaman Pengaturan, dibagi per bagian (#pengaturan-<bagian>).
+import {bpKePersen, persenKeBp, periksaFormatInvoice, nomorInvoice, FORMAT_INVOICE_BAWAAN, JATUH_TEMPO_BAWAAN, TARIF_PPN_BAWAAN} from './kontrak-util.js';
 import {OPSI_BISA_DIATUR, opsiBawaan, opsiSekarang, NAMA_TABEL} from './schema.js';
 import {hariIni, ZONA_WAKTU, zonaAktif} from './calc.js';
 import {store} from './store.js';
@@ -318,7 +319,8 @@ export function barisPemetaan(K = S.keu) {
 }
 function bagianPemetaan() {
   const rows = barisPemetaan();
-  const urutJenis = ['saldo_awal', 'kas_masuk', 'kas_keluar', 'transfer', 'transfer_biaya'];
+  const urutJenis = ['saldo_awal', 'kas_masuk', 'kas_keluar', 'transfer', 'transfer_biaya', 'invoice_piutang', 'invoice_pendapatan', 'invoice_titipan', 'invoice_ppn',
+    'terima_rekening', 'terima_potongan', 'terima_pendapatan', 'terima_titipan', 'terima_ppn', 'terima_piutang'];
   rows.sort((a, b) => urutJenis.indexOf(a.jenis) - urutJenis.indexOf(b.jenis) || a.urut - b.urut);
   return h('section', {class: 'kartu'}, h('h2', null, 'Pemetaan jurnal'),
     h('p', null, 'Tabel ini menentukan akun debit dan kredit setiap jurnal otomatis. Tabel disimpan di database; aplikasi hanya membacanya. Jenis transaksi baru (invoice, pembelian, aset) ditambahkan pada tahap berikutnya.'),
@@ -338,18 +340,36 @@ function bagianAkuntansi() {
   const bulan = h('select', {id: 'ak-bulan'}, NAMA_BULAN_PANJANG.map((l, i) => h('option', {value: String(i + 1), selected: a.bulan_awal_buku === i + 1}, l)));
   const batas = h('input', {id: 'ak-batas', type: 'text', inputmode: 'numeric', value: idn(a.batas_kapitalisasi), oninput: () => { batas.value = formatUang(batas.value); }});
   const bolehBasis = +hariIni().slice(5, 7) === a.bulan_awal_buku || !S.keu.jurnal.length;
+  // Tahap 3: tarif PPN, format nomor invoice, jatuh tempo bawaan.
+  const tarif = h('input', {id: 'ak-ppn', type: 'text', inputmode: 'decimal', value: idn(bpKePersen(a.tarif_ppn_bp ?? TARIF_PPN_BAWAAN), 2), class: 'angka-pendek'});
+  const format = h('input', {id: 'ak-format', type: 'text', value: a.format_invoice || FORMAT_INVOICE_BAWAAN, autocomplete: 'off'});
+  const contoh = h('span', {class: 'kecil redup'});
+  const segarContoh = () => { const g = periksaFormatInvoice(format.value); contoh.textContent = g || 'Contoh nomor berikutnya: ' + nomorInvoice(format.value, hariIni(), (S.keu.termin || []).map((t) => t.no_invoice)); contoh.classList.toggle('form-galat', !!g); };
+  format.addEventListener('input', segarContoh); segarContoh();
+  const jatuhTempo = h('input', {id: 'ak-jt', type: 'number', min: '0', max: '365', step: '1', value: String(a.jatuh_tempo_hari ?? JATUH_TEMPO_BAWAAN), class: 'angka-pendek'});
   return kartu('Pengaturan akuntansi',
     h('div', {class: 'form-grid'},
       medan('Basis pengakuan pendapatan', basis, {bantuan: 'Kas: pendapatan dicatat saat uang diterima; invoice tidak membuat jurnal. Akrual: pendapatan dicatat saat invoice terbit.'}),
       medan('Awal tahun buku', bulan, {bantuan: 'Bulan pertama periode buku.'}),
-      medan('Batas kapitalisasi aset', h('div', {class: 'berawalan'}, h('span', null, 'Rp'), batas), {id: 'ak-batas', bantuan: 'Pembelian barang di atas nilai ini dicatat sebagai aset (dipakai mulai Tahap 5).'})),
+      medan('Batas kapitalisasi aset', h('div', {class: 'berawalan'}, h('span', null, 'Rp'), batas), {id: 'ak-batas', bantuan: 'Pembelian barang di atas nilai ini dicatat sebagai aset (dipakai mulai Tahap 5).'}),
+      medan('Tarif PPN', h('div', {class: 'berakhiran'}, tarif, h('span', null, '%')), {id: 'ak-ppn', bantuan: 'Dipakai untuk kontrak baru. Kontrak yang sudah ada tetap memakai tarif saat kontrak dibuat.'}),
+      medan('Jatuh tempo invoice bawaan', h('div', {class: 'berakhiran'}, jatuhTempo, h('span', null, 'hari')), {id: 'ak-jt', bantuan: 'Dari tanggal invoice; bisa diubah per invoice.'}),
+      medan('Format nomor invoice', h('div', null, format, contoh), {lebar: true, id: 'ak-format', bantuan: 'Kode: {YYYY} tahun, {YY} tahun 2 digit, {MM} bulan, {NNN} nomor urut (jumlah N = jumlah digit). Nomor urut dihitung ulang setiap pola berubah, mis. setiap bulan.'})),
     !bolehBasis && h('p', {class: 'kecil redup'}, 'Basis hanya bisa diubah di bulan pertama tahun buku (' + NAMA_BULAN_PANJANG[a.bulan_awal_buku - 1] + '). Setiap perubahan dicatat di audit log.'),
     galat,
     h('div', {class: 'baris-tombol'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => {
       galat.textContent = '';
       const nilai = bacaUang(batas.value);
       if (nilai == null || nilai < 0) { galat.textContent = 'Batas kapitalisasi wajib diisi (0 atau lebih).'; return; }
-      try { await store.keu.aturAkuntansi({basis: basis.value, bulan_awal_buku: +bulan.value, batas_kapitalisasi: nilai}); }
+      const bp = persenKeBp(tarif.value);
+      if (bp == null || bp > 9999) { galat.textContent = 'Tarif PPN ditulis dalam persen, mis. 11 atau 12 (maksimal 2 desimal).'; tarif.focus(); return; }
+      const gf = periksaFormatInvoice(format.value);
+      if (gf) { galat.textContent = gf; format.focus(); return; }
+      const jt = jatuhTempo.value.trim();
+      if (!/^\d+$/.test(jt) || +jt > 365) { galat.textContent = 'Jatuh tempo bawaan diisi 0 sampai 365 hari.'; jatuhTempo.focus(); return; }
+      const ubahan = {basis: basis.value, bulan_awal_buku: +bulan.value, batas_kapitalisasi: nilai};
+      if (S.keu.kontrak_siap !== false) Object.assign(ubahan, {tarif_ppn_bp: bp, format_invoice: format.value.trim(), jatuh_tempo_hari: +jt});
+      try { await store.keu.aturAkuntansi(ubahan); }
       catch (e) { galat.textContent = e.message; return; }
       await segarkanKeuangan(); pesan('Pengaturan akuntansi tersimpan.');
     })}, 'Simpan')));
@@ -605,7 +625,8 @@ function bagianCadangan() {
 
 // ---------- audit log ----------
 const NAMA_AUDIT = {rekening: 'Rekening', kas_transaksi: 'Kas umum', transfer: 'Transfer', jurnal: 'Jurnal', jurnal_baris: 'Baris jurnal', akun: 'Bagan akun',
-  tutup_buku: 'Tutup buku', akuntansi: 'Pengaturan akuntansi', peran: 'Peran', perusahaan: 'Profil perusahaan', profiles: 'Pengguna'};
+  tutup_buku: 'Tutup buku', akuntansi: 'Pengaturan akuntansi', peran: 'Peran', perusahaan: 'Profil perusahaan', profiles: 'Pengguna',
+  kontrak_klien: 'Kontrak klien', kontrak_addendum: 'Addendum kontrak', termin: 'Termin / invoice', penerimaan: 'Penerimaan termin'};
 const AKSI = {insert: 'Tambah', update: 'Ubah', delete: 'Hapus'};
 const ringkasNilai = (v) => (v == null ? '—' : typeof v === 'object' ? (v.nama || v.path ? v.nama || v.path : JSON.stringify(v).slice(0, 60)) : typeof v === 'number' ? idn(v) : String(v).slice(0, 60));
 function perubahan(lama, baru) {

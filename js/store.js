@@ -56,7 +56,8 @@ function storeLokal() {
     keu: null,
     async init() {
       try { records = JSON.parse(localStorage.getItem(KUNCI_LOKAL) || '[]'); } catch { records = []; }
-      this.keu = mesinLokal({email: this.user.email, hariIni});
+      // Daftar kode proyek dibaca saat dipakai (records sudah termuat).
+      this.keu = mesinLokal({email: this.user.email, hariIni, proyek: () => records.filter((r) => r.tabel === 'proyek').map((r) => r.data.kode)});
       return this.user;
     },
     async muat() { return records.map((r) => ({...r})); },
