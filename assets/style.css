@@ -246,3 +246,13 @@ textarea { resize: vertical; }
 .tabel-akun .akun-golongan td { font-weight: 650; background: var(--aksen-lembut); }
 @media (max-width: 820px) { .pengguna { display: none; } }
 a.tab { text-decoration: none; }
+
+/* Tahap 2: master */
+.multi-pilih { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 12px; padding: 8px 10px; border: 1px solid var(--garis); border-radius: var(--radius); }
+.daftar-berkas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.daftar-berkas:empty { display: none; }
+.tabel-konversi { width: auto; }
+.tabel-konversi td { padding: 4px 6px; border: 0; }
+.tabel-konversi input { width: 9em; }
+.batang-tren { height: 10px; background: color-mix(in srgb, var(--aksen) 12%, transparent); border-radius: 999px; min-width: 120px; overflow: hidden; }
+.batang-tren span { display: block; height: 100%; background: var(--aksen); border-radius: 999px; }

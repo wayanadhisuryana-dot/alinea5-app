@@ -100,6 +100,10 @@ export function validasiKlien(masuk) {
   }
   const catatan = String(masuk.catatan ?? '').trim();
   if (catatan) data.catatan = catatan;
+  // Pihak afiliasi: centang di formulir (true/false) atau "Ya"/"Tidak" di Excel.
+  const af = masuk.afiliasi === true || masuk.afiliasi === false ? masuk.afiliasi : rapi(masuk.afiliasi).toLowerCase();
+  if (af === true || af === 'ya') data.afiliasi = true;
+  else if (af !== false && af !== '' && af !== 'tidak') salah('Pihak afiliasi', 'Isi Ya atau Tidak');
   return {data, galat};
 }
 

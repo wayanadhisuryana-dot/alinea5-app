@@ -26,6 +26,7 @@ const BAGIAN = [
   ['notifikasi', 'Notifikasi', () => hak('pengaturan') != null],
   ['umum', 'Umum', () => hak('pengaturan') != null],
   ['sdm', 'SDM', () => hak('pengaturan') != null],
+  ['barang', 'Barang & Harga', () => hak('pengaturan') != null],
   ['dropdown', 'Pilihan dropdown', () => hak('pengaturan') != null],
   ['cadangan', 'Cadangan', () => hak('pengaturan') != null],
   ['audit', 'Audit log', () => S.user.super_admin || hak('jurnal') != null],
@@ -40,7 +41,7 @@ export function renderPengaturan(el, bagian) {
     : 'Penyimpanan: Supabase. Anda masuk sebagai ' + S.user.email + ' (' + namaPeran() + ').' + (ubahPengaturan() ? '' : ' Anda hanya bisa melihat pengaturan.'))));
   el.append(h('div', {class: 'tabs', role: 'tablist'}, boleh.map(([k, label]) => h('a', {class: 'tab', href: '#pengaturan-' + k, role: 'tab', 'aria-selected': String(k === aktif)}, label))));
   const isiBagian = {profil: bagianProfil, modul: bagianModul, pengguna: bagianPengguna, kas: bagianKas, akun: bagianAkun, pemetaan: bagianPemetaan,
-    akuntansi: bagianAkuntansi, notifikasi: bagianNotifikasi, umum: bagianUmum, sdm: () => [bagianJabatan(), bagianParamSdm()], dropdown: bagianDropdown,
+    akuntansi: bagianAkuntansi, notifikasi: bagianNotifikasi, umum: bagianUmum, sdm: () => [bagianJabatan(), bagianParamSdm()], barang: bagianBarang, dropdown: bagianDropdown,
     cadangan: bagianCadangan, audit: bagianAudit}[aktif];
   if (isiBagian) el.append(...[].concat(isiBagian()).filter(Boolean));
   if (!ubahPengaturan()) el.querySelectorAll('.kartu.atur input, .kartu.atur select, .kartu.atur textarea, .kartu.atur button.btn-utama').forEach((x) => { x.disabled = true; });
@@ -399,6 +400,21 @@ function bagianUmum() {
     })}, 'Simpan')));
 }
 
+// ---------- Barang & Harga: batas harga lama ----------
+function bagianBarang() {
+  const bln = h('input', {id: 'harga-lama', type: 'number', min: '1', max: '60', step: '1', value: String(S.pengaturan?.data?.harga_lama_bulan || 6)});
+  return kartu('Barang & Harga',
+    h('div', {class: 'form-grid'},
+      medan('Penanda "Harga lama – perlu cek ulang"', h('div', {class: 'berakhiran'}, bln, h('span', null, 'bulan')), {id: 'harga-lama', bantuan: 'Muncul bila harga terakhir sebuah barang lebih tua dari batas ini. Bawaan 6 bulan.'})),
+    h('p', {class: 'kecil redup'}, 'Kategori barang, kategori pekerjaan, satuan, dan keahlian vendor diatur di ', h('a', {href: '#pengaturan-dropdown'}, 'Pilihan dropdown'), '.'),
+    h('div', {class: 'baris-tombol'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => {
+      const v = +bln.value;
+      if (!Number.isInteger(v) || v < 1 || v > 60) throw new Error('Batas harga lama harus 1–60 bulan.');
+      await store.simpan('pengaturan', S.pengaturan?.id, {...S.pengaturan?.data, harga_lama_bulan: v});
+      await muatData(); S.render(); pesan('Pengaturan Barang & Harga tersimpan.');
+    })}, 'Simpan')));
+}
+
 // ---------- SDM: jabatan dan batas PKWT ----------
 function bagianJabatan() {
   const {jabatan} = aturSdm(S.pengaturan?.data);
@@ -498,6 +514,8 @@ function bagianDropdown() {
         const daftar = [...new Set(kotak[k].value.split('\n').map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean))];
         if (!daftar.length) { galat.textContent = label + ': minimal satu pilihan.'; return; }
         if (k === 'sumberKlien' && daftar.some((x) => x.includes(','))) { galat.textContent = label + ': pilihan tidak boleh memuat koma (dipakai sebagai dropdown di file Excel).'; return; }
+        if (['keahlianVendor', 'kategoriBarang'].includes(k) && daftar.some((x) => /[,;]/.test(x))) { galat.textContent = label + ': pilihan tidak boleh memuat koma atau titik koma (dipakai sebagai pemisah di file Excel).'; return; }
+        if (k === 'satuanBarang' && daftar.some((x) => /[;=]/.test(x))) { galat.textContent = label + ': satuan tidak boleh memuat ; atau = (dipakai di kolom konversi Excel).'; return; }
         opsi[k] = daftar;
       }
       await simpanPengaturan('opsi', opsi);

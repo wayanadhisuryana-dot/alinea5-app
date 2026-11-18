@@ -11,9 +11,9 @@ export const MENU = [
   {k: 'masalah', label: 'Masalah & Risiko', grup: 'Proyek', ke: 't-masalah', tabel: 'masalah', modul: 'masalah'},
   {k: 'rab', label: 'RAB / Penawaran', grup: 'Proyek', ke: 'rab', modul: 'rab', segera: true},
   {k: 'klien', label: 'Klien', grup: 'Master', ke: 't-klien', tabel: 'klien'},
-  {k: 'vendor', label: 'Vendor & Tukang', grup: 'Master', ke: 'segera-vendor', segera: true},
-  {k: 'supplier', label: 'Supplier', grup: 'Master', ke: 'segera-supplier', segera: true},
-  {k: 'barang', label: 'Barang & Harga', grup: 'Master', ke: 'segera-barang', segera: true},
+  {k: 'vendor', label: 'Vendor & Tukang', grup: 'Master', ke: 'vendor-tukang', tabel: 'vendor_tukang'},
+  {k: 'supplier', label: 'Supplier', grup: 'Master', ke: 'supplier', tabel: 'supplier'},
+  {k: 'barang', label: 'Barang & Harga', grup: 'Master', ke: 'barang', tabel: 'barang'},
   {k: 'kontrak', label: 'Kontrak', grup: 'Keuangan', ke: 't-kontrak', tabel: 'kontrak'},
   {k: 'termin', label: 'Termin & Piutang', grup: 'Keuangan', ke: 't-termin', tabel: 'termin'},
   {k: 'pihak_proyek', label: 'Pihak Proyek', judul: 'Vendor / Tukang / Pihak Terkait Proyek', grup: 'Keuangan', ke: 't-vendor', tabel: 'vendor'},
@@ -69,13 +69,14 @@ export const khusus = (k, user = S.user) => !!(user?.aktif && (user.super_admin 
 export const menuTampil = (m) => (m.bebas || hak(m.k) != null) && (!m.modul || modulAktif(m.modul));
 
 // Tabel data (records.tabel) -> kunci menu. Direktori 'tim' dibaca oleh menu proyek dan SDM.
-export const menuTabel = (tabel) => MENU.find((m) => m.tabel === tabel)?.k || tabel;
+// Riwayat harga ('harga') ikut menu Barang & Harga. Sama dengan public.menu_tabel di database.
+export const menuTabel = (tabel) => (tabel === 'harga' ? 'barang' : MENU.find((m) => m.tabel === tabel)?.k || tabel);
 export function bolehAkses(tabel) {
-  if (tabel === 'tim') return ['proyek', 'tahap', 'masalah', 'sdm'].some((k) => hak(k) != null);
+  if (tabel === 'tim') return ['proyek', 'tahap', 'masalah', 'sdm', 'vendor'].some((k) => hak(k) != null);
   const m = menuDari(menuTabel(tabel));
   return hak(menuTabel(tabel)) != null && (!m?.modul || modulAktif(m.modul));
 }
-export const bolehUbahTabel = (tabel) => bolehAkses(tabel) && (tabel === 'tim' ? bisaUbah('sdm') : bisaUbah(menuTabel(tabel)));
+export const bolehUbahTabel = (tabel) => bolehAkses(tabel) && (tabel === 'tim' ? bisaUbah('sdm') || bisaUbah('vendor') : bisaUbah(menuTabel(tabel)));
 
 // Profil dari database -> pengguna aplikasi. Database lama (sebelum Tahap 1) belum punya kolom
 // super_admin dan peran: admin dianggap super admin, arsitek mendapat hak Staf proyek.

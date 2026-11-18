@@ -15,6 +15,7 @@ const KOLOM_DASAR = [
   {k: 'sumber', judul: 'Sumber klien', lebar: 20, pilihan: SUMBER_KLIEN, ket: 'Opsional. Pilih dari daftar.'},
   {k: 'referensi_oleh', judul: 'Direferensikan oleh', lebar: 24, ket: 'Opsional. Hanya dipakai bila Sumber klien = Referensi.'},
   {k: 'sumber_lain', judul: 'Sebutkan sumber', lebar: 24, ket: 'Opsional. Hanya dipakai bila Sumber klien = Lainnya.'},
+  {k: 'afiliasi', judul: 'Pihak afiliasi', lebar: 14, pilihan: ['Ya', 'Tidak'], ket: 'Opsional, bawaan Tidak. Ya bila klien punya hubungan istimewa dengan perusahaan (untuk laporan pihak berelasi).'},
   {k: 'catatan', judul: 'Catatan', lebar: 36, ket: 'Opsional.'},
 ];
 const kolomKontak = (i) => [
@@ -33,7 +34,7 @@ const CONTOH = {nama: 'CONTOH - PT Maju Jaya', jenis: JENIS_KLIEN[1], pic: 'Ibu 
 // Klien -> satu baris datar (kontak utama di kolom PIC, kontak lain di "Kontak 2", "Kontak 3", ...).
 export function klienKeBaris(k) {
   const kontak = kontakDari(k), utama = kontak.find((c) => c.utama), lain = kontak.filter((c) => !c.utama);
-  const baris = {nama: k.nama, jenis: k.jenis, pic: utama?.nama, jabatan: utama?.jabatan, hp: utama?.hp, email: utama?.email, alamat: k.alamat, npwp: k.npwp, sumber: k.sumber, referensi_oleh: k.referensi_oleh, sumber_lain: k.sumber_lain, catatan: k.catatan};
+  const baris = {nama: k.nama, jenis: k.jenis, pic: utama?.nama, jabatan: utama?.jabatan, hp: utama?.hp, email: utama?.email, alamat: k.alamat, npwp: k.npwp, sumber: k.sumber, referensi_oleh: k.referensi_oleh, sumber_lain: k.sumber_lain, afiliasi: k.afiliasi ? 'Ya' : 'Tidak', catatan: k.catatan};
   lain.forEach((c, i) => Object.assign(baris, {['k' + (i + 2) + '_nama']: c.nama, ['k' + (i + 2) + '_jabatan']: c.jabatan, ['k' + (i + 2) + '_hp']: c.hp, ['k' + (i + 2) + '_email']: c.email}));
   return baris;
 }
@@ -42,7 +43,7 @@ export function barisKeMasuk(b) {
   const kontak = [{nama: b.pic, jabatan: b.jabatan, hp: b.hp, email: b.email, utama: true}];
   const nomor = [...new Set(Object.keys(b).map((k) => /^k(\d+)_/.exec(k)).filter(Boolean).map((m) => +m[1]))].sort((x, y) => x - y);
   for (const i of nomor) kontak.push({nama: b['k' + i + '_nama'], jabatan: b['k' + i + '_jabatan'], hp: b['k' + i + '_hp'], email: b['k' + i + '_email']});
-  return {nama: b.nama, jenis: b.jenis, kontak: kontak.filter(Boolean), alamat: b.alamat, npwp: b.npwp, sumber: b.sumber, referensi_oleh: b.referensi_oleh, sumber_lain: b.sumber_lain, catatan: b.catatan};
+  return {nama: b.nama, jenis: b.jenis, kontak: kontak.filter(Boolean), alamat: b.alamat, npwp: b.npwp, sumber: b.sumber, referensi_oleh: b.referensi_oleh, sumber_lain: b.sumber_lain, afiliasi: b.afiliasi, catatan: b.catatan};
 }
 
 // Membuat workbook. baris: daftar baris datar; opsi.contoh: sertakan baris contoh abu-abu;

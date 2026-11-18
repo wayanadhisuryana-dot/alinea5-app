@@ -1,6 +1,6 @@
 // Tim Proyek: anggota tiap proyek beserta perannya, dipilih dari orang internal (SDM) yang aktif
-// dan dicentang "Dapat dipilih sebagai Tim Proyek". Kelompok "Mandor, Tukang & Freelance" menyusul
-// setelah Master Vendor/Tukang dibuat.
+// dan dicentang "Dapat dipilih sebagai Tim Proyek", serta kelompok "Mandor, Tukang & Freelance" dari
+// master Vendor & Tukang (jenis Mandor, Tukang, Freelance yang aktif).
 import {OPSI} from './schema.js';
 import {S} from './state.js';
 import {h, tgl} from './ui.js';
@@ -11,10 +11,13 @@ let nomor = 0;
 export function orangTersedia() {
   const internal = S.db.tim.filter((r) => r.sdm_id && r.aktif && r.tim_proyek)
     .map((r) => ({ref: 'sdm:' + r.sdm_id, nama: r.nama, ket: r.jabatan, kelompok: 'Internal (SDM)'}));
-  return internal.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+  const luar = S.db.tim.filter((r) => r.vendor_id && r.aktif && r.tim_proyek)
+    .map((r) => ({ref: 'vendor:' + r.vendor_id, nama: r.nama, ket: r.jabatan, kelompok: 'Mandor, Tukang & Freelance'}));
+  const urut = (x) => x.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+  return [...urut(internal), ...urut(luar)];
 }
 // Nama orang internal untuk isian PIC di Progres Tahap dan Masalah.
-export const namaTimInternal = () => orangTersedia().map((o) => o.nama);
+export const namaTimInternal = () => orangTersedia().filter((o) => o.ref.startsWith('sdm:')).map((o) => o.nama);
 
 // Kotak pilihan orang dengan pencarian, dikelompokkan. onPilih(orang) dipanggil saat dipilih.
 function pilihOrang(id, onPilih) {
@@ -31,7 +34,7 @@ function pilihOrang(id, onPilih) {
     daftar.replaceChildren(...grup.flatMap((g) => [h('div', {class: 'kombo-grup'}, g),
       ...cocok.filter((o) => o.kelompok === g).map((o) => h('button', {class: 'kombo-opsi', type: 'button', role: 'option', onmousedown: tahan, onclick: () => { terpilih = o; cari.value = o.nama; tutup(); onPilih?.(o); }},
         h('span', null, o.nama), o.ket && h('span', {class: 'kecil redup'}, ' · ' + o.ket)))]),
-    ...(cocok.length ? [] : [h('div', {class: 'kombo-kosong redup'}, orangTersedia().length ? 'Tidak ada nama yang cocok.' : 'Belum ada pegawai aktif yang dicentang "Dapat dipilih sebagai Tim Proyek" di menu SDM.')]));
+    ...(cocok.length ? [] : [h('div', {class: 'kombo-kosong redup'}, orangTersedia().length ? 'Tidak ada nama yang cocok.' : 'Belum ada pegawai aktif yang dicentang "Dapat dipilih sebagai Tim Proyek" di menu SDM, atau mandor / tukang / freelance aktif di menu Vendor & Tukang.')]));
     daftar.hidden = false; cari.setAttribute('aria-expanded', 'true');
   };
   cari.addEventListener('focus', buka);

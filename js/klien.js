@@ -62,7 +62,7 @@ export function renderKlien(el) {
         await store.hapus(r.id); await segarkan(); pesan('Klien dihapus.');
       })}, 'Hapus');
       return h('tr', null,
-        h('td', null, h('a', {href: '#klien-' + r.id, title: 'Buka detail klien'}, r.nama)),
+        h('td', null, h('a', {href: '#klien-' + r.id, title: 'Buka detail klien'}, r.nama), r.afiliasi && [' ', h('span', {class: 'pill pill-waspada', title: 'Pihak afiliasi'}, 'Afiliasi')]),
         h('td', null, isi(r.jenis)),
         h('td', null, r.kontak_utama ? [h('span', null, r.kontak_utama), r.jabatan_utama && h('span', {class: 'kecil redup blok'}, r.jabatan_utama)] : '—'),
         h('td', {class: 'nw'}, r.hp_utama ? h('a', {href: 'https://wa.me/' + r.hp_utama, target: '_blank', rel: 'noopener', title: 'Buka WhatsApp'}, r.hp_utama) : '—'),
@@ -114,7 +114,7 @@ export function renderDetailKlien(el, id) {
       h('div', {class: 'judul-baris'}, h('h1', null, k.nama), h('span', {class: 'pegas'}), bisaUbah('klien') && h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormKlien(k.id)}, 'Ubah data')),
       h('p', {class: 'redup'}, [k.jenis, k.status_klien, k.jml_proyek + ' proyek', k.total_kontrak ? 'total kontrak ' + rpRingkas(k.total_kontrak) : null, k.terakhir_aktif ? 'terakhir aktif ' + tgl(k.terakhir_aktif) : null].filter(Boolean).join(' · '))),
     h('section', {class: 'kartu'}, h('h2', null, 'Data klien'),
-      rincian([['Jenis klien', k.jenis], ['Alamat penagihan', k.alamat], [k.jenis === 'Perorangan' ? 'NPWP / NIK' : 'NPWP', k.npwp], ['Sumber klien', sumber], ['Catatan', k.catatan]])),
+      rincian([['Jenis klien', k.jenis], ['Alamat penagihan', k.alamat], [k.jenis === 'Perorangan' ? 'NPWP / NIK' : 'NPWP', k.npwp], ['Sumber klien', sumber], ['Pihak afiliasi', k.afiliasi ? 'Ya' : 'Tidak'], ['Catatan', k.catatan]])),
     h('section', {class: 'kartu'}, h('h2', null, k.jenis === 'Perorangan' ? 'Kontak' : 'Kontak / PIC'),
       tabelKecil([['Nama'], ['Jabatan'], ['HP/WA'], ['Email'], ['']], 'Belum ada kontak.', k.kontak.map((c) => h('tr', null,
         h('td', null, isi(c.nama)), h('td', null, isi(c.jabatan)), h('td', {class: 'nw'}, waTautan(c.hp)),
@@ -188,12 +188,13 @@ export function bukaFormKlien(id, opsi = {}) {
   const cekSumber = () => { medanReferensi.hidden = sumber.value !== 'Referensi'; medanSumberLain.hidden = sumber.value !== 'Lainnya'; };
   sumber.addEventListener('change', cekSumber); cekSumber();
   const catatan = h('textarea', {id: 'k-catatan', rows: '2'}, lama?.catatan ?? '');
+  const afiliasi = h('input', {id: 'k-afiliasi', type: 'checkbox', checked: !!lama?.afiliasi});
 
   const galat = h('div', {class: 'kotak-galat', role: 'alert', hidden: true});
   const peringatan = h('div', {class: 'kotak-info', role: 'alert', hidden: true});
   const simpan = h('button', {class: 'btn btn-utama', type: 'submit'}, 'Simpan');
   const kumpul = () => ({
-    nama: nama.value, jenis: jenis.value, alamat: alamat.value, npwp: npwp.value, sumber: sumber.value, referensi_oleh: referensi.value, sumber_lain: sumberLain.value, catatan: catatan.value,
+    nama: nama.value, jenis: jenis.value, alamat: alamat.value, npwp: npwp.value, sumber: sumber.value, referensi_oleh: referensi.value, sumber_lain: sumberLain.value, catatan: catatan.value, afiliasi: afiliasi.checked,
     kontak: [...wadahKontak.querySelectorAll('.kontak')].map((kartu, i) => {
       const c = Object.fromEntries([...kartu.querySelectorAll('[data-k]')].map((e) => [e.dataset.k, e.type === 'radio' ? e.checked : e.value]));
       return perorangan() ? (i === 0 ? {...c, nama: nama.value, jabatan: '', utama: true} : {...c, utama: false}) : c;
@@ -244,6 +245,7 @@ export function bukaFormKlien(id, opsi = {}) {
     h('div', {class: 'form-grid'},
       medan('Alamat penagihan', alamat), h('div', {class: 'medan'}, labelNpwp, kotakNpwp),
       medan('Sumber klien', sumber), medanReferensi, medanSumberLain,
+      h('div', {class: 'medan medan-lebar'}, h('label', {class: 'centang', for: 'k-afiliasi'}, afiliasi, ' Pihak afiliasi (punya hubungan istimewa dengan perusahaan)')),
       medan('Catatan', catatan, null, 'medan-lebar')),
     lama && h('p', {class: 'kecil redup'}, 'Dihitung otomatis: ' + lama.jml_proyek + ' proyek, ' + lama.jml_kontrak + ' kontrak, total ' + rpRingkas(lama.total_kontrak) + ', terakhir aktif ' + tgl(lama.terakhir_aktif) + ', status ' + lama.status_klien + '.'));
   function terapkanJenis() {

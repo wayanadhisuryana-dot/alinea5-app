@@ -4,6 +4,7 @@ import {hitung, hariIni, aturZona} from './calc.js';
 import {store} from './store.js';
 import {entriDirektori} from './sdm-util.js';
 import {bisaUbah} from './akses.js';
+import {JENIS_VENDOR_TIM} from './master-util.js';
 
 // db: data mentah per tabel; d: data + kolom hitungan; render: diisi oleh app.js.
 export const S = {
@@ -25,7 +26,28 @@ export async function muatData(sudahSinkron = false) {
   terapkanOpsi(S.pengaturan?.data?.opsi);
   aturZona(S.pengaturan?.data?.zona_waktu);
   S.d = hitung(S.db, hariIni(), S.pengaturan?.data);
-  if (!sudahSinkron && bisaUbah('sdm') && await sinkronDirektori()) await muatData(true);
+  if (!sudahSinkron) {
+    const a = bisaUbah('sdm') && await sinkronDirektori();
+    const b = bisaUbah('vendor') && await sinkronVendor();
+    if (a || b) await muatData(true);
+  }
+}
+
+// Vendor & Tukang -> direktori Tim Proyek: Mandor, Tukang, dan Freelance yang aktif bisa dipilih di Tim Proyek.
+// Direktori hanya berisi nama, jenis, dan status (tanpa NIK, HP, rekening). true bila ada perubahan.
+export const entriVendor = (v) => ({vendor_id: v.id, nama: v.nama || '', jabatan: v.jenis || '', aktif: v.aktif !== false, tim_proyek: JENIS_VENDOR_TIM.includes(v.jenis)});
+async function sinkronVendor() {
+  const kerja = [];
+  const direktori = new Map(S.db.tim.filter((r) => r.vendor_id).map((r) => [r.vendor_id, r]));
+  for (const v of S.db.vendor_tukang) {
+    const entri = entriVendor(v), lama = direktori.get(v.id);
+    direktori.delete(v.id);
+    if (!lama || Object.keys(entri).some((k) => lama[k] !== entri[k])) kerja.push(store.simpan('tim', lama?.id, entri));
+  }
+  for (const sisa of direktori.values()) kerja.push(store.hapus(sisa.id));
+  if (!kerja.length) return false;
+  try { await Promise.all(kerja); } catch (e) { console.error('Sinkron direktori vendor gagal', e); return false; }
+  return true;
 }
 
 // Admin: menyamakan direktori orang (tabel 'tim', dibaca arsitek untuk Tim Proyek) dengan data SDM,

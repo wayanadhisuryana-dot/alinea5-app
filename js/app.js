@@ -8,6 +8,8 @@ import {renderKas, renderMutasi, renderJurnal} from './keuangan.js';
 import {renderPengaturan, NAMA_APLIKASI_BAWAAN, WARNA_BAWAAN, periksaCadanganOtomatis} from './pengaturan.js';
 import {lonceng, muatStatusNotifikasi, mulaiPemeriksaanHarian} from './notifikasi.js';
 import {renderKlien, renderDetailKlien, pilihKlien} from './klien.js';
+import {renderVendor, renderSupplier} from './master.js';
+import {renderBarang, renderDetailBarang} from './barang.js';
 import {kotakCek, cekSemua, periksaIsian} from './cek.js';
 import {renderSdm, renderDetailPegawai} from './sdm.js';
 import {editorTimProyek, pilihAnggota, namaTimInternal} from './tim-proyek.js';
@@ -16,12 +18,13 @@ const akar = document.getElementById('app');
 
 // ---------- rute ----------
 const rute = () => (location.hash.replace(/^#/, '') || 'dashboard');
-const jumlahMenu = (m) => (m.tabel && S.db[m.tabel] ? S.db[m.tabel].length : m.k === 'kas' ? S.keu.rekening.filter((r) => r.aktif).length || null : null);
+const jumlahMenu = (m) => (m.tabel && S.db[m.tabel] ? S.db[m.tabel].filter((x) => x.aktif !== false && (m.tabel !== 'barang' || (x.jenis || 'barang') === 'barang')).length : m.k === 'kas' ? S.keu.rekening.filter((r) => r.aktif).length || null : null);
 // Rute -> kunci menu yang disorot.
 function menuAktif(r) {
   if (r.startsWith('sdm-')) return 'sdm';
   if (r.startsWith('klien-')) return 'klien';
   if (r.startsWith('kas')) return 'kas';
+  if (r.startsWith('barang')) return 'barang';
   if (r.startsWith('pengaturan')) return 'pengaturan';
   return MENU.find((m) => m.ke === r)?.k || null;
 }
@@ -59,6 +62,10 @@ function render() {
   if (tabel && TABEL[tabel] && !TABEL[tabel].tersembunyi && bolehAkses(tabel)) ({klien: renderKlien, sdm: renderSdm}[tabel] || renderTabel)(utama, tabel);
   else if (r.startsWith('sdm-') && bolehAkses('sdm')) renderDetailPegawai(utama, r.slice(4));
   else if (r.startsWith('klien-') && bolehAkses('klien')) renderDetailKlien(utama, r.slice(6));
+  else if (r === 'vendor-tukang' && hak('vendor')) renderVendor(utama);
+  else if (r === 'supplier' && hak('supplier')) renderSupplier(utama);
+  else if (r === 'barang' && hak('barang')) renderBarang(utama);
+  else if (r.startsWith('barang-') && hak('barang')) renderDetailBarang(utama, r.slice(7));
   else if (r === 'kas' && hak('kas')) renderKas(utama);
   else if (r.startsWith('kas-') && hak('kas')) renderMutasi(utama, r.slice(4));
   else if (r === 'jurnal' && hak('jurnal')) renderJurnal(utama);

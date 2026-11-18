@@ -38,6 +38,11 @@ export const OPSI = {
   peranTim: ['PIC', 'Pengawas', 'Desainer', 'Drafter', 'Mandor', 'Tukang', 'Lainnya'],
   kategoriAset: ['Komputer / laptop', 'Software / lisensi', 'Kendaraan', 'Printer / plotter', 'Peralatan lapangan', 'Furnitur kantor', 'Lainnya'],
   kondisi: ['Baik', 'Perlu servis', 'Rusak', 'Hilang'],
+  // Tahap 2: master
+  keahlianVendor: ['Kayu / kusen', 'Pasangan batu & beton', 'Besi & las', 'Cat & finishing', 'Keramik & lantai', 'Atap', 'Listrik', 'Plumbing', 'Gypsum & plafon', 'Furniture / interior', 'Taman', 'Lainnya'],
+  kategoriBarang: ['Kayu & Panel', 'Besi & Logam', 'Keramik & Batu', 'HPL & Finishing', 'Cat', 'Lampu & Elektrikal', 'Sanitair', 'Hardware & Aksesori', 'Kaca', 'Kain & Upholstery', 'Lainnya'],
+  kategoriPekerjaan: ['Kitchen set', 'Lemari & furniture built-in', 'Plafon', 'Partisi & dinding', 'Lantai', 'Pengecatan', 'Elektrikal', 'Plumbing', 'Lainnya'],
+  satuanBarang: ['m²', "m'", 'm³', 'lembar', 'batang', 'unit', 'set', 'kg', 'liter', 'dus', 'sak', 'roll', 'buah', 'titik', 'ls'],
 };
 
 // Pilihan yang boleh diubah admin dari menu Pengaturan. Daftar lain (status proyek, status masalah,
@@ -57,6 +62,10 @@ export const OPSI_BISA_DIATUR = {
   peranTim: 'Peran di Tim Proyek (Proyek)',
   jenisDokumenKerja: 'Jenis dokumen kerja (SDM)',
   kategoriAset: 'Kategori aset (Aset)',
+  keahlianVendor: 'Keahlian (Vendor & Tukang)',
+  kategoriBarang: 'Kategori barang (Barang & Harga, Supplier)',
+  kategoriPekerjaan: 'Kategori pekerjaan (Barang & Harga → Harga Pekerjaan)',
+  satuanBarang: 'Satuan (Barang & Harga)',
 };
 const BAWAAN = Object.fromEntries(Object.entries(OPSI).map(([k, v]) => [k, v.slice()]));
 export const opsiBawaan = (k) => (k === 'sumberKlien' ? SUMBER_BAWAAN : BAWAAN[k]).slice();
@@ -216,6 +225,11 @@ export const TABEL = {
     ],
     kolom: [['kreditur', 'Kreditur'], ['jenis', 'Jenis'], ['uraian', 'Uraian'], ['total', 'Total', 'uang'], ['dibayar', 'Dibayar', 'uang'], ['sisa', 'Sisa', 'uang'], ['cicilan', 'Cicilan / bulan', 'uang'], ['jatuh_tempo', 'Jatuh tempo', 'tanggal'], ['alert', 'Peringatan', 'pill']],
   },
+  // Tahap 2: master dengan halaman sendiri (js/master.js, js/barang.js).
+  vendor_tukang: {label: 'Vendor & Tukang', satuan: 'vendor', grup: 'Master', akses: 'admin', urut: 'nama', tersembunyi: true, bantuan: '', isian: [], kolom: []},
+  supplier: {label: 'Supplier', satuan: 'supplier', grup: 'Master', akses: 'admin', urut: 'nama', tersembunyi: true, bantuan: '', isian: [], kolom: []},
+  barang: {label: 'Barang & Harga', satuan: 'barang', grup: 'Master', akses: 'admin', urut: 'kode', tersembunyi: true, bantuan: '', isian: [], kolom: []},
+  harga: {label: 'Riwayat harga', satuan: 'harga', grup: 'Master', akses: 'admin', urut: 'tanggal', tersembunyi: true, bantuan: '', isian: [], kolom: []},
   // SDM punya halaman, formulir, dan halaman detail sendiri (js/sdm.js).
   sdm: {
     label: 'SDM', satuan: 'pegawai', grup: 'Administrasi', akses: 'admin', urut: 'nama',

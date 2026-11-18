@@ -10,12 +10,24 @@ import {hariIni} from './calc.js';
 const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 const KUNCI_LOKAL = 'alinea5:records';
 export const idBaru = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
-const cek = ({data, error}) => { if (error) throw new Error(error.message); return data; };
+// Pesan database yang teknis -> kalimat untuk pengguna.
+const TERJEMAH = [
+  [/records_vendor_nik_unik/, 'NIK ini sudah terdaftar pada vendor lain.'],
+  [/records_vendor_npwp_unik/, 'NPWP ini sudah terdaftar pada vendor lain.'],
+  [/records_supplier_npwp_unik/, 'NPWP ini sudah terdaftar pada supplier lain.'],
+  [/records_barang_kode_unik/, 'Kode barang ini sudah dipakai barang lain.'],
+  [/records_tabel_check/, 'Database belum diperbarui untuk menu ini. Jalankan SQL migrasi terbaru di Supabase.'],
+  [/row-level security|permission denied/i, 'Anda tidak punya hak untuk perubahan ini.'],
+];
+const cek = ({data, error}) => { if (error) throw new Error(TERJEMAH.find(([p]) => p.test(error.message))?.[1] || error.message); return data; };
 
-// File: PDF SDM (kontrak kerja, sertifikat) di 'dokumen-sdm'; bukti keuangan (PDF/JPG/PNG) di 'bukti-keuangan'.
+// File: PDF SDM (kontrak kerja, sertifikat) di 'dokumen-sdm'; bukti keuangan (PDF/JPG/PNG) di 'bukti-keuangan';
+// dokumen vendor dan foto barang di 'dokumen-master'.
 // Mode demo menyimpannya di IndexedDB browser ini.
 const BUCKET = 'dokumen-sdm';
 export const BUCKET_BUKTI = 'bukti-keuangan';
+// Dokumen vendor (folder vendor/) dan foto barang (folder barang/): PDF/JPG/PNG.
+export const BUCKET_MASTER = 'dokumen-master';
 function bukaIdb() {
   return new Promise((ok, gagal) => {
     const r = indexedDB.open('alinea5-berkas', 1);
