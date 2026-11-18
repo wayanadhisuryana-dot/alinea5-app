@@ -146,10 +146,10 @@ export function renderDetailBarang(el, id) {
       h('thead', null, h('tr', null, ['Tanggal', J.pihakLabel, 'Harga dicatat', 'Per ' + b.satuan, 'PPN', 'Ongkir / ' + b.satuan, 'Sumber', 'Proyek', 'Catatan'].map((x, i) => h('th', {class: [2, 3, 5].includes(i) ? 'kanan' : null}, x)))),
       h('tbody', null, rows.slice().sort((a, c) => bandingkan(c.tanggal, a.tanggal) || bandingkan(c.dibuat, a.dibuat)).map((x) => h('tr', {class: 'bisa-klik', tabindex: '0', onclick: () => bukaFormHarga(b, x), onkeydown: (ev) => { if (ev.key === 'Enter') bukaFormHarga(b, x); }},
         h('td', {class: 'nw'}, tgl(x.tanggal)), h('td', null, namaPihak(x, jenis)), h('td', {class: 'kanan nw'}, rp(x.harga) + ' / ' + x.satuan), h('td', {class: 'kanan nw'}, rpBaku(hargaBaku(x))),
-        h('td', null, x.ppn ? 'Termasuk' : '—'), h('td', {class: 'kanan'}, x.ongkir ? rpBaku(ongkirBaku(x)) : '—'), h('td', null, h('span', {class: 'pill pill-netral'}, x.sumber || 'Input manual')),
+        h('td', null, x.ppn ? 'Termasuk' : '—'), h('td', {class: 'kanan'}, x.ongkir ? rpBaku(ongkirBaku(x)) : '—'), h('td', null, SUMBER_OTOMATIS.includes(x.sumber) ? h('span', {class: 'pill pill-netral', title: 'Hanya bisa diubah di transaksi ' + x.sumber}, '🔒 ' + x.sumber + (x.ref?.nomor ? ' · ' + x.ref.nomor : '')) : h('span', {class: 'pill pill-netral'}, x.sumber || 'Input manual')),
         h('td', null, isi(x.proyek_kode)), h('td', {class: 'kecil'}, isi(x.catatan)))))))
       : h('div', {class: 'kosong-ajakan'}, h('p', null, 'Belum ada harga untuk ' + b.nama + '.'), bisa && h('button', {class: 'btn btn-utama', type: 'button', onclick: () => bukaFormHarga(b, null)}, '+ Catat harga pertama')),
-    h('p', {class: 'kecil redup'}, 'Riwayat tidak pernah ditimpa: harga baru selalu dicatat sebagai baris baru. Harga per ' + b.satuan + ' dihitung otomatis dari satuan yang dicatat.')));
+    h('p', {class: 'kecil redup'}, 'Harga baru selalu dicatat sebagai baris baru. Harga per ' + b.satuan + ' dihitung otomatis dari satuan yang dicatat. Harga bertanda 🔒 berasal dari transaksi dan hanya bisa diubah di transaksi itu; perubahan harga lain tercatat di Audit log.')));
 }
 const tambah12 = (t) => { const [y, m, d] = t.split('-'); return (+y - 1) + '-' + m + '-' + d; };
 
@@ -258,6 +258,18 @@ export function bukaFormBarang(id, jenis = 'barang') {
 }
 
 // ---------- formulir harga ----------
+// Harga dari transaksi (Pembelian / Kontrak vendor) tidak bisa diubah di sini. Modul sumbernya (Tahap 4) mengisi
+// x.ref = {id, nomor, tanggal} supaya pengguna tahu transaksi mana yang harus dibuka.
+const MENU_SUMBER = {'Pembelian': 'Pembelian Material', 'Kontrak vendor': 'Kontrak'};
+function peringatanSumber(x) {
+  const nomor = x.ref?.nomor, menu = MENU_SUMBER[x.sumber] || x.sumber;
+  const transaksi = 'transaksi ' + x.sumber + (nomor ? ' nomor ' + nomor : '') + ' tanggal ' + tgl(x.ref?.tanggal || x.tanggal) + (x.pihak_nama ? ' (' + x.pihak_nama + ')' : '');
+  return h('div', {class: 'kotak-galat', role: 'alert'},
+    h('b', null, 'Harga ini tidak bisa diubah atau dihapus di sini.'),
+    h('span', null, 'Harga ini tercatat otomatis dari ' + transaksi + '.'),
+    h('span', null, 'Bila harganya salah, buka menu ' + menu + ' → ' + (nomor ? 'transaksi ' + nomor : 'transaksi tersebut') + ', lalu perbaiki di sana. Riwayat harga ini ikut diperbaiki otomatis.'));
+}
+
 export function bukaFormHarga(b, x) {
   const jenis = jenisDari(b), J = JENIS[jenis];
   const otomatis = x && SUMBER_OTOMATIS.includes(x.sumber);
@@ -308,7 +320,7 @@ export function bukaFormHarga(b, x) {
     } catch (e) { galat.textContent = e.message; simpan.disabled = false; simpan.textContent = 'Simpan'; }
   };
   const form = h('form', {class: 'form', onsubmit: kirim},
-    otomatis && h('div', {class: 'kotak-info'}, 'Harga ini berasal dari ' + x.sumber + ' dan hanya bisa diubah dari transaksi sumbernya.'),
+    otomatis && peringatanSumber(x),
     h('div', {class: 'form-grid'},
       medan('Tanggal', tanggal, {wajib: true}), medan(J.pihakLabel, h('div', null, pihak, pihakLama), {id: 'h-pihak-cari'}),
       medan('Harga satuan', h('div', {class: 'berawalan'}, h('span', null, 'Rp'), harga), {wajib: true, id: 'h-harga'}), medan('Per satuan', satuan, {bantuan: 'Satuan baku atau satuan konversi barang ini.'}),
@@ -317,7 +329,8 @@ export function bukaFormHarga(b, x) {
       medan('Catatan', catatan, {lebar: true})),
     hitung, galat,
     h('div', {class: 'form-kaki'},
-      x && bisa && tombolHapus(async () => { await store.hapus(x.id); dlg.close(); await segarkan(); pesan('Baris harga dihapus.'); }, 'Hapus baris ini'),
+      x && bisa && (S.user?.super_admin ? tombolHapus(async () => { await store.hapus(x.id); dlg.close(); await segarkan(); pesan('Baris harga dihapus.'); }, 'Hapus baris ini')
+        : h('span', {class: 'kecil redup'}, 'Menghapus harga hanya bisa oleh Super admin.')),
       h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, bisa ? 'Batal' : 'Tutup'), bisa && simpan));
   if (!bisa) form.querySelectorAll('input,select,textarea').forEach((e) => { e.disabled = true; });
   dlg = dialog((x ? 'Harga: ' : 'Catat harga: ') + b.nama, form);
