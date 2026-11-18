@@ -8,6 +8,14 @@
 -- Pembelian -> jurnal (D Material 5-1 / Persediaan 1-6 / PPN Masukan 1-4, atau D Hutang Dana Titipan 2-4 / K Kas atau Hutang Supplier 2-3).
 -- Pinjaman antar proyek TIDAK membuat jurnal: hanya memindahkan saldo dompet antar proyek.
 
+-- Pemeriksaan awal: Tahap 3 (3-kontrak.sql) harus sudah terpasang.
+do $$
+begin
+  if to_regclass('public.kontrak_klien') is null or to_regprocedure('public.bagi(bigint, bigint, bigint)') is null then
+    raise exception 'Database Tahap 3 belum terpasang. Jalankan dulu supabase/migrasi/3-kontrak.sql (lalu 3-uji.sql), baru 4-proyek.sql.';
+  end if;
+end $$;
+
 -- =====================================================================
 -- 1. ARSIP DATA PIHAK PROYEK BENTUK LAMA
 -- =====================================================================
