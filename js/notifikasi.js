@@ -16,7 +16,8 @@ export const JENIS_NOTIF = {
   skk: {label: 'SKK / STRA pegawai akan habis', hari: 90, menu: 'sdm', modul: 'skk', sdm: 'hari_skk'},
   magang: {label: 'Periode magang akan berakhir', hari: 30, menu: 'sdm', sdm: 'hari_magang'},
   legal: {label: 'Dokumen legal / izin akan habis', hari: 60, menu: 'legal', modul: 'legal'},
-  aset: {label: 'Lisensi / pajak aset akan habis', hari: 30, menu: 'aset', modul: 'aset'},
+  aset: {label: 'Dokumen aset akan habis (pajak, STNK, lisensi, garansi, asuransi)', hari: 30, menu: 'aset', modul: 'aset'},
+  aset_servis: {label: 'Aset berkondisi "Perlu servis"', hari: 0, menu: 'aset', modul: 'aset', tanpaHari: true},
   hutang_lain: {label: 'Jatuh tempo hutang lain', hari: 14, menu: 'hutang_lain', modul: 'hutang_lain'},
   termin: {label: 'Jatuh tempo tagihan klien', hari: 7, menu: 'termin'},
   tenggat_proyek: {label: 'Tenggat pekerjaan proyek di kontrak', hari: 14, menu: 'kontrak'},
@@ -55,7 +56,13 @@ export function hitungNotifikasi(today = hariIni()) {
       if (boleh('magang') && s.status === STATUS.magang) tambah('magang', s.id, s.magang_selesai, 'Magang ' + s.nama + ' berakhir', '#sdm-' + s.id);
     }
     if (boleh('legal')) for (const x of d.legal || []) tambah('legal', x.id, x.berlaku_sd, x.dokumen + ' habis berlaku', '#t-legal');
-    if (boleh('aset')) for (const x of d.aset || []) tambah('aset', x.id, x.lisensi_sd, 'Lisensi / pajak ' + x.nama + ' habis', '#t-aset');
+    if (boleh('aset')) for (const x of d.aset || []) for (const p of x.peringatan || []) if (p.dokumen) {
+      tambah('aset', p.dokumen.id, p.tanggal, p.dokumen.jenis + ' ' + x.kode + ' ' + x.nama + (p.habis ? ' sudah habis' : ' habis'), '#aset-' + x.id);
+    }
+    // Kondisi tidak bertanggal: muncul hari ini selama kondisinya "Perlu servis"; kunci tetap agar status dibaca tersimpan.
+    if (boleh('aset_servis')) for (const x of d.aset || []) if (x.status === 'Aktif' && x.kondisi === 'Perlu servis') {
+      hasil.push({kunci: 'aset_servis:' + x.id, jenis: 'aset_servis', tanggal: today, judul: x.kode + ' ' + x.nama + ' perlu servis', ke: '#aset-' + x.id, sisa: 0});
+    }
     if (boleh('hutang_lain')) for (const x of d.hutang_lain || []) if (x.sisa > 0) tambah('hutang_lain', x.id, x.jatuh_tempo, 'Hutang ' + x.kreditur + ' jatuh tempo', '#t-hutang_lain');
     if (boleh('termin')) for (const x of d.termin || []) if (x.no_invoice && x.sisa > 0) {
       tambah('termin', x.id, x.jatuh_tempo, 'Tagihan ' + x.no_invoice + ' · ' + (x.nama_proyek || x.kode) + (x.jatuh_tempo < today ? ' lewat jatuh tempo, sisa ' + rp(x.sisa) : ' jatuh tempo'), '#piutang-' + x.id);

@@ -19,12 +19,13 @@ import {renderPembelian, renderDetailPembelian} from './pembelian.js';
 import {renderDetailProyek} from './detail-proyek.js';
 import {ringkasTitipanDipinjamkan} from './dompet.js';
 import {bacaKeuangan} from './proyek-bersama.js';
+import {renderAset, renderDetailAset, renderLaporanPajak, bukukanOtomatis} from './aset.js';
 
 const akar = document.getElementById('app');
 
 // ---------- rute ----------
 const rute = () => (location.hash.replace(/^#/, '') || 'dashboard');
-const jumlahMenu = (m) => (m.tabel && S.db[m.tabel] ? S.db[m.tabel].filter((x) => x.aktif !== false && (m.tabel !== 'barang' || (x.jenis || 'barang') === 'barang')).length : m.k === 'kas' ? S.keu.rekening.filter((r) => r.aktif).length || null : m.k === 'kontrak' ? S.keu.kontrak_klien?.length || null : m.k === 'pihak_proyek' ? S.keu.kontrak_vendor?.length || null : m.k === 'pembelian' ? S.keu.pembelian?.length || null : null);
+const jumlahMenu = (m) => (m.tabel && S.db[m.tabel] ? S.db[m.tabel].filter((x) => x.aktif !== false && (m.tabel !== 'barang' || (x.jenis || 'barang') === 'barang')).length : m.k === 'kas' ? S.keu.rekening.filter((r) => r.aktif).length || null : m.k === 'kontrak' ? S.keu.kontrak_klien?.length || null : m.k === 'pihak_proyek' ? S.keu.kontrak_vendor?.length || null : m.k === 'pembelian' ? S.keu.pembelian?.length || null : m.k === 'aset' ? S.d?.aset?.filter((a) => a.status === 'Aktif').length || null : null);
 // Rute -> kunci menu yang disorot.
 function menuAktif(r) {
   if (r.startsWith('sdm-')) return 'sdm';
@@ -33,6 +34,7 @@ function menuAktif(r) {
   if (r.startsWith('kontrak')) return 'kontrak';
   if (r.startsWith('pihak-proyek')) return 'pihak_proyek';
   if (r.startsWith('pembelian')) return 'pembelian';
+  if (r.startsWith('aset')) return 'aset';
   if (r.startsWith('proyek-')) return 'proyek';
   if (r.startsWith('piutang')) return 'termin';
   if (r.startsWith('barang')) return 'barang';
@@ -85,6 +87,10 @@ function render() {
   else if (r.startsWith('pihak-proyek-') && hak('pihak_proyek')) renderDetailPihak(utama, r.slice(13));
   else if (r === 'pembelian' && hak('pembelian')) renderPembelian(utama);
   else if (r.startsWith('pembelian-') && hak('pembelian')) renderDetailPembelian(utama, r.slice(10));
+  else if (r === 'aset' && hak('aset') && modulAktif('aset')) renderAset(utama);
+  else if (r === 'aset-pajak' && hak('aset') && modulAktif('aset')) renderLaporanPajak(utama);
+  else if (r.startsWith('aset-') && hak('aset') && modulAktif('aset')) renderDetailAset(utama, r.slice(5));
+  else if (r === 't-aset') { history.replaceState(null, '', '#aset'); return render(); }
   else if (r.startsWith('proyek-') && bolehAkses('proyek')) renderDetailProyek(utama, r.slice(7), {bukaForm});
   else if (r === 't-vendor' || r === 'segera-pembelian') { history.replaceState(null, '', r === 't-vendor' ? '#pihak-proyek' : '#pembelian'); return render(); }
   else if (r.startsWith('kontrak-') && (hak('kontrak') || hak('termin'))) renderDetailKontrak(utama, r.slice(8));
@@ -241,7 +247,7 @@ function renderDashboard(el) {
         ubin('Hutang supplier', rpRingkas(r.hutang_supplier || 0), 'pembelian tempo belum lunas'),
         ubin('Kewajiban lain', rpRingkas(r.hutang_lain), 'sisa di luar vendor proyek'),
         ubin('Gaji + tunjangan', rpRingkas(r.gaji_bulanan), 'per bulan'),
-        ubin('Nilai buku aset', rpRingkas(r.nilai_buku_aset), 'perkiraan, garis lurus')),
+        ubin('Nilai buku aset', rpRingkas(r.nilai_buku_aset), 'per hari ini, komersial')),
       tabelSederhana([['Kreditur'], ['Uraian'], ['Sisa', 1], ['Jatuh tempo berikut'], ['Peringatan']],
         d.hutang_lain.slice().sort((a, b) => String(a.jatuh_tempo).localeCompare(String(b.jatuh_tempo))).map((x) => [isi(x.kreditur), isi(x.uraian), rp(x.sisa), tgl(x.jatuh_tempo), x.alert ? pill(x.alert) : 'Tidak ada']), 'Tidak ada kewajiban lain.')));
   }
@@ -445,6 +451,8 @@ function bukaTahapMassal() {
 // ---------- mulai ----------
 async function mulaiSesi() {
   await muatData();
+  // Penyusutan aset bulan-bulan yang sudah berakhir dibukukan otomatis saat admin aset membuka aplikasi.
+  if (await bukukanOtomatis()) await muatData(true);
   await muatStatusNotifikasi();
   periksaCadanganOtomatis();
 }

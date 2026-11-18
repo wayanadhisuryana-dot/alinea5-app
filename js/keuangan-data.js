@@ -10,6 +10,7 @@ import {hitungTermin, isiRetensi, periksaKontrak, nomorInvoice, periksaFormatInv
   FORMAT_INVOICE_BAWAAN, JATUH_TEMPO_BAWAAN, TARIF_PPN_BAWAAN} from './kontrak-util.js';
 import {periksaKontrakVendor, nilaiOpname, retensiDari, periksaPembelian, hitungPembelian, subtotalBaris, kali, volumeSah, ringkasPinjaman} from './proyek-util.js';
 import {faktorSatuan} from './master-util.js';
+import {akumulasiSampai, perolehanPada, idxBulan, bulanKe, akhirBulan, totalBayar, kodeAsetBerikut, prefixSah, KONDISI_ASET, STATUS_ASET, JENIS_DOKUMEN_ASET} from './aset-util.js';
 
 // ---------- data standar (sama dengan migrasi) ----------
 export const AKUN_STANDAR = [
@@ -20,7 +21,7 @@ export const AKUN_STANDAR = [
   ['2-4', 'Hutang Dana Titipan Klien'], ['2-5', 'PPN Keluaran'], ['2-6', 'Hutang Pajak Lainnya'], ['2-7', 'Hutang Bank – Jangka Pendek'],
   ['2-8', 'Hutang Bank / Leasing – Jangka Panjang'], ['2-9', 'Hutang kepada Pemilik / Pihak Afiliasi'], ['2-10', 'Hutang Gaji & Lainnya'],
   ['3', 'EKUITAS'], ['3-1', 'Modal Disetor'], ['3-2', 'Laba Ditahan'], ['3-3', 'Laba Tahun Berjalan'],
-  ['4', 'PENDAPATAN'], ['4-1', 'Pendapatan Jasa Desain'], ['4-2', 'Pendapatan Jasa Pelaksanaan / Turn-key'], ['4-3', 'Pendapatan Lain-lain'],
+  ['4', 'PENDAPATAN'], ['4-1', 'Pendapatan Jasa Desain'], ['4-2', 'Pendapatan Jasa Pelaksanaan / Turn-key'], ['4-3', 'Pendapatan Lain-lain'], ['4-4', 'Laba Pelepasan Aset'],
   ['5', 'BEBAN PROYEK'], ['5-1', 'Material Proyek'], ['5-2', 'Upah / Vendor / Tukang'], ['5-3', 'Sewa Alat Proyek'], ['5-4', 'Beban Proyek Lainnya'],
   ['6', 'BEBAN OPERASIONAL'], ['6-1', 'Gaji & Tunjangan'], ['6-2', 'Sewa Kantor'], ['6-3', 'Listrik, Air, Internet, Telepon'],
   ['6-4', 'Beban Penyusutan & Amortisasi'], ['6-5', 'Perawatan & Servis'], ['6-6', 'Software & Langganan'], ['6-7', 'Pemasaran'],
@@ -66,18 +67,35 @@ export const PEMETAAN = [
   ['beli_hutang', 1, 'Pembelian – tempo', 'K', '2-3', 'Hutang Supplier'],
   ['bayar_supplier_hutang', 1, 'Pembayaran hutang supplier', 'D', '2-3', 'Hutang Supplier'],
   ['bayar_supplier_kas', 1, 'Pembayaran hutang supplier – uang keluar', 'K', 'REKENING', 'Rekening pembayar'],
+  // Tahap 5: aset, penyusutan, pelepasan, servis. AKUN_* diisi dari akun kategori aset.
+  ['aset_perolehan', 1, 'Perolehan aset – nilai perolehan', 'D', 'AKUN_ASET', 'Akun aset kategori (mis. 1-7 Aset Tetap, 1-9 Aset Tak Berwujud)'],
+  ['aset_ppn', 1, 'Perolehan aset – PPN masukan', 'D', '1-4', 'PPN Masukan (bila PKP dan PPN dapat dikreditkan)'],
+  ['aset_kas', 1, 'Perolehan aset – dibayar tunai / transfer', 'K', 'REKENING', 'Rekening pembayar'],
+  ['aset_hutang', 1, 'Perolehan aset – kredit / leasing', 'K', '2-8', 'Hutang Bank / Leasing (ditautkan ke Hutang Lain di Tahap 6)'],
+  ['susut_beban', 1, 'Penyusutan / amortisasi bulanan – beban', 'D', 'AKUN_BEBAN', 'Akun beban kategori (mis. 6-4 Beban Penyusutan & Amortisasi)'],
+  ['susut_akumulasi', 1, 'Penyusutan / amortisasi bulanan – akumulasi', 'K', 'AKUN_AKUMULASI', 'Akun akumulasi kategori (mis. 1-8 Akumulasi Penyusutan)'],
+  ['lepas_akumulasi', 1, 'Pelepasan aset – akumulasi dihapus', 'D', 'AKUN_AKUMULASI', 'Akumulasi penyusutan sampai bulan sebelum pelepasan'],
+  ['lepas_kas', 1, 'Pelepasan aset – uang hasil penjualan', 'D', 'REKENING', 'Rekening penerima nilai jual'],
+  ['lepas_rugi', 1, 'Pelepasan aset – rugi', 'D', '7-2', 'Rugi Pelepasan Aset'],
+  ['lepas_laba', 1, 'Pelepasan aset – laba', 'K', '4-4', 'Laba Pelepasan Aset'],
+  ['lepas_aset', 1, 'Pelepasan aset – nilai perolehan dihapus', 'K', 'AKUN_ASET', 'Akun aset kategori (nilai perolehan + servis dikapitalisasi)'],
+  ['servis_beban', 1, 'Servis aset – biaya biasa', 'D', '6-5', 'Perawatan & Servis'],
+  ['servis_aset', 1, 'Servis aset – dikapitalisasi', 'D', 'AKUN_ASET', 'Menambah nilai aset (akun aset kategori)'],
+  ['servis_kas', 1, 'Servis aset – uang keluar', 'K', 'REKENING', 'Rekening pembayar'],
 ].map(([jenis, urut, nama, sisi, akun, keterangan]) => ({jenis, urut, nama, sisi, akun, keterangan}));
 export const ISI_PEMETAAN = {
   REKENING: 'Rekening yang dipilih', AKUN_DIPILIH: 'Akun yang dipilih di transaksi',
   REKENING_ASAL: 'Rekening asal', REKENING_TUJUAN: 'Rekening tujuan', AKUN_PENDAPATAN: 'Akun pendapatan di kontrak (4-1 / 4-2)',
+  AKUN_ASET: 'Akun aset kategori', AKUN_AKUMULASI: 'Akun akumulasi kategori', AKUN_BEBAN: 'Akun beban penyusutan kategori',
 };
 export const GOLONGAN = {1: 'Aset', 2: 'Kewajiban', 3: 'Ekuitas', 4: 'Pendapatan', 5: 'Beban proyek', 6: 'Beban operasional', 7: 'Beban lain-lain'};
 export const saldoNormal = (gol) => (gol === 1 || gol >= 5 ? 'D' : 'K');
 export const JENIS_REKENING = ['Giro', 'Tabungan', 'Deposito', 'Kas tunai'];
 export const SUMBER_JURNAL = {manual: 'Jurnal manual', saldo_awal: 'Saldo awal', kas: 'Kas umum', transfer: 'Transfer', penerimaan: 'Penerimaan termin', invoice: 'Invoice',
-  opname: 'Opname vendor', bayar_vendor: 'Pembayaran vendor', pembelian: 'Pembelian material', bayar_supplier: 'Pembayaran supplier'};
+  opname: 'Opname vendor', bayar_vendor: 'Pembayaran vendor', pembelian: 'Pembelian material', bayar_supplier: 'Pembayaran supplier',
+  aset: 'Perolehan aset', pelepasan_aset: 'Pelepasan aset', servis_aset: 'Servis aset', penyusutan: 'Penyusutan'};
 export const AKUNTANSI_BAWAAN = {basis: 'kas', bulan_awal_buku: 1, batas_kapitalisasi: 10000000, tarif_ppn_bp: TARIF_PPN_BAWAAN, format_invoice: FORMAT_INVOICE_BAWAAN, jatuh_tempo_hari: JATUH_TEMPO_BAWAAN,
-  batas_pinjam_titipan_persen: null};
+  batas_pinjam_titipan_persen: null, metode_fiskal: 'garis_lurus'};
 // Kolom kontrak yang diisi dari formulir (sisanya diisi sistem).
 export const KOLOM_KONTRAK = ['proyek_kode', 'no_kontrak', 'tanggal', 'jenis_perjanjian', 'bentuk_dokumen', 'file', 'nilai_jasa', 'nilai_titipan', 'ppn', 'akun_pendapatan',
   'mulai', 'selesai', 'denda_alinea_persen', 'denda_alinea_maks', 'denda_alinea_maks_jenis', 'denda_klien_persen', 'denda_klien_satuan', 'denda_klien_maks',
@@ -88,6 +106,19 @@ export const TABEL_PROYEK = ['kontrak_vendor', 'kontrak_vendor_item', 'kontrak_v
   'pembayaran_supplier', 'pinjaman_proyek', 'pengembalian_pinjaman'];
 export const KOLOM_KONTRAK_VENDOR = ['proyek_kode', 'vendor_id', 'lingkup', 'no_spk', 'tanggal', 'file', 'sumber_dana', 'skema', 'nilai', 'upah_harian', 'perkiraan_hari',
   'retensi_bp', 'masa_retensi_hari', 'tgl_selesai', 'catatan'];
+// Tahap 5. Aset.
+export const TABEL_ASET = ['kelompok_fiskal', 'aset_kategori', 'aset_lokasi', 'aset', 'aset_mutasi', 'aset_servis', 'aset_dokumen', 'penyusutan_bulan', 'penyusutan_aset'];
+export const KOLOM_ASET = ['nama', 'kategori_id', 'no_seri', 'supplier_id', 'faktur', 'foto', 'tgl_perolehan', 'harga', 'ppn', 'ppn_kredit', 'biaya_tambahan', 'diskon',
+  'tetap_aset', 'cara', 'rekening_id', 'tgl_mulai', 'umur_bulan', 'residu', 'kelompok_id', 'bulan_fiskal', 'pemegang_id', 'lokasi_id', 'tgl_mutasi', 'catatan_mutasi',
+  'kondisi', 'status', 'tgl_pelepasan', 'nilai_jual', 'rekening_jual_id', 'alasan_pelepasan', 'catatan'];
+export const KELOMPOK_FISKAL_AWAL = [['Kelompok 1', 4, 2500, 5000], ['Kelompok 2', 8, 1250, 2500], ['Kelompok 3', 16, 625, 1250], ['Kelompok 4', 20, 500, 1000],
+  ['Bangunan permanen', 20, 500, null], ['Bangunan tidak permanen', 10, 1000, null]];
+// [nama, prefix, jenis, disusutkan, akun aset, akun akumulasi, umur bawaan (bulan), kelompok bawaan] — sama dengan 5-aset.sql.
+export const KATEGORI_ASET_AWAL = [['Tanah', 'TNH', 'berwujud', false, '1-7', null, null, null], ['Bangunan', 'BGN', 'berwujud', true, '1-7', '1-8', 240, 'Bangunan permanen'],
+  ['Renovasi kantor / bangunan sewa', 'RNV', 'berwujud', true, '1-7', '1-8', 60, null], ['Kendaraan', 'KND', 'berwujud', true, '1-7', '1-8', 96, 'Kelompok 2'],
+  ['Komputer & elektronik', 'KMP', 'berwujud', true, '1-7', '1-8', 48, 'Kelompok 1'], ['Peralatan kantor', 'PKT', 'berwujud', true, '1-7', '1-8', 48, 'Kelompok 1'],
+  ['Furnitur', 'FRN', 'berwujud', true, '1-7', '1-8', 48, 'Kelompok 1'], ['Peralatan proyek / lapangan', 'PPL', 'berwujud', true, '1-7', '1-8', 96, 'Kelompok 2'],
+  ['Software / lisensi permanen', 'SWL', 'tak_berwujud', true, '1-9', '1-9', 48, 'Kelompok 1']];
 export const KOLOM_PEMBELIAN = ['tanggal', 'supplier_id', 'no_nota', 'tujuan', 'proyek_kode', 'sumber_dana', 'cara_bayar', 'rekening_id', 'jatuh_tempo', 'ppn', 'ongkir',
   'ppn_kredit', 'file', 'catatan'];
 // Perkiraan nomor invoice berikutnya (nomor pasti diberikan saat disimpan).
@@ -155,7 +186,7 @@ function keadaanAwal() {
     tutup_buku: [], tutup_buku_riwayat: [], akuntansi: {...AKUNTANSI_BAWAAN}, audit_log: [], perusahaan: {id: 'lokal', data: {}},
     peran: [], notifikasi_status: [], seq: {jurnal: 0, baris: 0, audit: 0, riwayat: 0},
     kontrak_klien: [], kontrak_addendum: [], termin: [], penerimaan: [],
-    ...Object.fromEntries(TABEL_PROYEK.map((t) => [t, []])),
+    ...Object.fromEntries(TABEL_PROYEK.map((t) => [t, []])), ...Object.fromEntries(TABEL_ASET.map((t) => [t, []])),
   };
   const id = {};
   for (const [kode, nama] of AKUN_STANDAR) {
@@ -167,13 +198,29 @@ function keadaanAwal() {
   return s;
 }
 
+// Tahap 5: isi awal kelompok fiskal dan kategori aset (sama dengan 5-aset.sql), serta akun standar baru.
+function isiAwalAset(K) {
+  for (const [kode, nama] of AKUN_STANDAR) {
+    if (K.akun.some((a) => a.kode === kode)) continue;
+    const induk = K.akun.find((a) => a.kode === kode.split('-')[0]);
+    K.akun.push({id: idBaru(), kode, nama, induk_id: kode.includes('-') ? induk?.id ?? null : null, golongan: +kode[0], standar: true, sistem: false, rekening_id: null, aktif: true});
+  }
+  if (!K.kelompok_fiskal.length) KELOMPOK_FISKAL_AWAL.forEach(([nama, masa_tahun, tarif_gl_bp, tarif_sm_bp], i) =>
+    K.kelompok_fiskal.push({id: idBaru(), nama, masa_tahun, tarif_gl_bp, tarif_sm_bp, urut: i + 1, aktif: true}));
+  const akun = (kode) => K.akun.find((a) => a.kode === kode)?.id ?? null;
+  if (!K.aset_kategori.length) KATEGORI_ASET_AWAL.forEach(([nama, prefix, jenis, disusutkan, aset, akum, umur, kel], i) =>
+    K.aset_kategori.push({id: idBaru(), nama, prefix, jenis, disusutkan, umur_bulan: umur, kelompok_id: K.kelompok_fiskal.find((k) => k.nama === kel)?.id ?? null, akun_aset_id: akun(aset),
+      akun_akumulasi_id: disusutkan ? akun(akum) : null, akun_beban_id: disusutkan ? akun('6-4') : null, urut: i + 1, aktif: true}));
+}
+
 // master(): records data master (vendor_tukang, supplier, barang); tulisHarga(sumberId, rows): ganti riwayat harga otomatis.
 export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], master = () => [], tulisHarga = async () => {}}) {
   let K;
   try { K = JSON.parse(localStorage.getItem(KUNCI)); } catch { K = null; }
   if (!K?.akun?.length) K = keadaanAwal();
   // Data demo dari sebelum Tahap 3.
-  for (const t of [...TABEL_KONTRAK, ...TABEL_PROYEK]) K[t] ||= [];
+  for (const t of [...TABEL_KONTRAK, ...TABEL_PROYEK, ...TABEL_ASET]) K[t] ||= [];
+  isiAwalAset(K);
   K.akuntansi = {...AKUNTANSI_BAWAAN, ...K.akuntansi};
   for (const m of PEMETAAN) if (!K.pemetaan_jurnal.some((x) => x.jenis === m.jenis && x.urut === m.urut)) K.pemetaan_jurnal.push({...m});
   const tulis = () => localStorage.setItem(KUNCI, JSON.stringify(K));
@@ -248,7 +295,7 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
     for (const r of rincian) {
       if (!r.jumlah) continue;
       for (const m of s.pemetaan_jurnal.filter((x) => x.jenis === r.jenis).sort((a, b) => a.urut - b.urut)) {
-        const akunId = /^\d/.test(m.akun) ? akunKode(s, m.akun)?.id : isiAkun[m.akun];
+        const akunId = /^\d/.test(m.akun) ? akunKode(s, m.akun)?.id : r.isi?.[m.akun] ?? isiAkun[m.akun];
         if (!akunId) throw new Error('Pemetaan jurnal ' + m.jenis + ' (' + m.sisi + '): akun ' + m.akun + ' tidak ditemukan.');
         const plus = r.jumlah > 0, debit = (m.sisi === 'D') === plus;
         tambahBaris(s, {jurnal_id: j.id, akun_id: akunId, debit: debit ? Math.abs(r.jumlah) : 0, kredit: debit ? 0 : Math.abs(r.jumlah), proyek_kode: proyek});
@@ -631,6 +678,7 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
     if (p.tujuan !== 'proyek') p.proyek_kode = null;
     if (p.cara_bayar !== 'tunai') p.rekening_id = null;
     if (p.cara_bayar !== 'tempo') p.jatuh_tempo = null;
+    p.barang_modal = !!d.barang_modal && p.tujuan === 'stok';
     const br = baris.map((x, i) => ({id: idBaru(), pembelian_id: p.id, urut: i + 1, barang_id: x.barang_id, barang_nama: dariMaster('barang', x.barang_id)?.nama || '',
       qty: +x.qty, satuan: x.satuan, faktor: faktorDari(x.barang_id, x.satuan), harga: +x.harga, diskon: +(x.diskon || 0)}));
     for (const b of br) b.subtotal = subtotalBaris(b);
@@ -739,6 +787,275 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
     if (sudah + jumlah > p.jumlah) throw new Error('Pengembalian melebihi sisa pinjaman (sisa Rp ' + fmt(p.jumlah - sudah) + ').');
     const x = {...(lama || {id: idBaru(), pinjaman_id: p.id, dibuat: waktuDi(s, 'pengembalian_pinjaman'), dibuat_oleh: email}), tanggal: d.tanggal, jumlah, catatan: d.catatan || null};
     return simpanBaris(s, 'pengembalian_pinjaman', lama, x);
+  };
+
+  // ---------- Tahap 5: aset, servis, pelepasan, penyusutan (aturan sama dengan 5-aset.sql) ----------
+  const katDari = (s, id) => s.aset_kategori.find((k) => k.id === id);
+  const asetDari = (s, id) => s.aset.find((x) => x.id === id);
+  const servisAset = (s, id) => s.aset_servis.filter((x) => x.aset_id === id);
+  const angka0 = (v) => (v == null || v === '' ? 0 : +v);
+  const uangSah = (v, pesanSalah) => { const x = angka0(v); if (!Number.isInteger(x) || x < 0) throw new Error(pesanSalah); return x; };
+  const rekeningBoleh = (s, id, lamaId) => s.rekening.some((r) => r.id === id && (r.aktif || r.id === lamaId));
+  const rekAkun = (s, rid) => (rid ? akunRekening(s, rid)?.id : null);
+  const jurnalAset = (s, id) => {
+    const a = asetDari(s, id);
+    if (!a) return jurnalOtomatis(s, 'aset', id, null);
+    jurnalOtomatis(s, 'aset', a.id, a.tgl_perolehan, 'Perolehan aset ' + a.kode + ' ' + a.nama,
+      [{jenis: 'aset_perolehan', jumlah: a.nilai_perolehan}, {jenis: 'aset_ppn', jumlah: a.ppn_kredit ? a.ppn : 0}, {jenis: a.cara === 'tunai' ? 'aset_kas' : 'aset_hutang', jumlah: totalBayar(a)}],
+      {AKUN_ASET: katDari(s, a.kategori_id).akun_aset_id, REKENING: rekAkun(s, a.rekening_id)});
+  };
+  const jurnalPelepasan = (s, id) => {
+    const a = asetDari(s, id);
+    if (!a || a.status === 'Aktif') return jurnalOtomatis(s, 'pelepasan_aset', id, null);
+    const k = katDari(s, a.kategori_id);
+    jurnalOtomatis(s, 'pelepasan_aset', a.id, a.tgl_pelepasan, 'Pelepasan aset ' + a.kode + ' ' + a.nama + ' (' + a.status.toLowerCase() + ')',
+      [{jenis: 'lepas_akumulasi', jumlah: a.akumulasi_lepas}, {jenis: 'lepas_kas', jumlah: a.nilai_jual}, {jenis: 'lepas_rugi', jumlah: Math.max(-a.laba_lepas, 0)},
+        {jenis: 'lepas_laba', jumlah: Math.max(a.laba_lepas, 0)}, {jenis: 'lepas_aset', jumlah: a.akumulasi_lepas + a.nilai_buku_lepas}],
+      {AKUN_ASET: k.akun_aset_id, AKUN_AKUMULASI: k.akun_akumulasi_id, REKENING: rekAkun(s, a.rekening_jual_id)});
+  };
+  const jurnalServis = (s, id) => {
+    const x = s.aset_servis.find((y) => y.id === id);
+    if (!x) return jurnalOtomatis(s, 'servis_aset', id, null);
+    const a = asetDari(s, x.aset_id);
+    jurnalOtomatis(s, 'servis_aset', x.id, x.tanggal, 'Servis ' + a.kode + ' ' + a.nama + ' · ' + x.uraian,
+      [{jenis: x.kapitalisasi ? 'servis_aset' : 'servis_beban', jumlah: x.biaya}, {jenis: 'servis_kas', jumlah: x.biaya}],
+      {AKUN_ASET: katDari(s, a.kategori_id).akun_aset_id, REKENING: rekAkun(s, x.rekening_id)});
+  };
+  const jurnalPenyusutan = (s, id) => {
+    const b = s.penyusutan_bulan.find((x) => x.id === id);
+    if (!b) return jurnalOtomatis(s, 'penyusutan', id, null);
+    const grup = new Map();
+    for (const pa of s.penyusutan_aset.filter((x) => x.bulan_id === id)) {
+      const k = katDari(s, asetDari(s, pa.aset_id).kategori_id), kunci = k.akun_beban_id + '|' + k.akun_akumulasi_id;
+      const g = grup.get(kunci) || grup.set(kunci, {beban: k.akun_beban_id, akum: k.akun_akumulasi_id, jml: 0}).get(kunci);
+      g.jml += pa.jumlah;
+    }
+    jurnalOtomatis(s, 'penyusutan', b.id, akhirBulan(idxBulan(b.bulan)), 'Penyusutan & amortisasi ' + namaBulan(b.bulan),
+      [...grup.values()].flatMap((g) => [{jenis: 'susut_beban', jumlah: g.jml, isi: {AKUN_BEBAN: g.beban}}, {jenis: 'susut_akumulasi', jumlah: g.jml, isi: {AKUN_AKUMULASI: g.akum}}]), {});
+  };
+  const BELI = ['tgl_perolehan', 'harga', 'ppn', 'ppn_kredit', 'biaya_tambahan', 'diskon', 'cara', 'rekening_id', 'kategori_id'];
+  const sama = (a, b, kolom) => kolom.every((c) => (a[c] ?? null) === (b[c] ?? null));
+  const simpanAsetDi = (s, id, d) => {
+    const lama = id ? asetDari(s, id) : null;
+    if (id && !lama) throw new Error('Aset tidak ditemukan.');
+    const dulu = lama && {...lama};
+    if (!String(d.nama || '').trim()) throw new Error('Nama aset wajib diisi.');
+    const kat = katDari(s, d.kategori_id);
+    if (!kat || (!kat.aktif && kat.id !== lama?.kategori_id)) throw new Error('Kategori aset wajib dipilih (kategori aktif).');
+    if (lama && kat.id !== lama.kategori_id && (s.penyusutan_aset.some((x) => x.aset_id === id) || s.aset_servis.some((x) => x.aset_id === id))) {
+      throw new Error('Kategori tidak bisa diubah: aset ini sudah punya penyusutan atau servis yang dibukukan.');
+    }
+    const tgl = d.tgl_perolehan || null;
+    if (!tgl) throw new Error('Tanggal perolehan wajib diisi.');
+    const harga = uangSah(d.harga === '' || d.harga == null ? -1 : d.harga, 'Harga sebelum PPN wajib diisi (rupiah utuh, tidak minus).');
+    const ppn = uangSah(d.ppn, 'PPN, biaya tambahan, dan diskon tidak boleh minus.'), bt = uangSah(d.biaya_tambahan, 'PPN, biaya tambahan, dan diskon tidak boleh minus.');
+    const diskon = uangSah(d.diskon, 'PPN, biaya tambahan, dan diskon tidak boleh minus.');
+    const kredit = !!d.ppn_kredit && ppn > 0;
+    if (kredit && !pkpPada(s.perusahaan.data, tgl)) throw new Error('PPN hanya bisa dikreditkan bila perusahaan sudah PKP pada tanggal perolehan (lihat Pengaturan → Profil perusahaan).');
+    const nilai = harga + bt - diskon + (kredit ? 0 : ppn);
+    if (nilai <= 0) throw new Error('Nilai perolehan harus lebih dari 0.');
+    const batas = +s.akuntansi.batas_kapitalisasi || 0;
+    if (nilai < batas && !d.tetap_aset) throw new Error('Nilai perolehan di bawah batas kapitalisasi. Sebaiknya dicatat sebagai biaya (OPEX).');
+    if (!['tunai', 'kredit', 'leasing'].includes(d.cara)) throw new Error('Cara perolehan wajib dipilih.');
+    if (d.cara === 'tunai' && !rekeningBoleh(s, d.rekening_id, lama?.rekening_id)) throw new Error('Rekening pembayar wajib dipilih (rekening aktif).');
+    let mulai = null, umur = null, residu = 0;
+    if (kat.disusutkan) {
+      mulai = d.tgl_mulai || tgl; umur = d.umur_bulan === '' || d.umur_bulan == null ? null : +d.umur_bulan; residu = angka0(d.residu);
+      if (mulai < tgl) throw new Error('Tanggal mulai digunakan tidak boleh sebelum tanggal perolehan.');
+      if (!(Number.isInteger(umur) && umur > 0)) throw new Error('Umur ekonomis wajib diisi (lebih dari 0).');
+      if (!Number.isInteger(residu) || residu < 0 || residu >= nilai) throw new Error('Nilai residu harus 0 atau lebih dan di bawah nilai perolehan.');
+    }
+    if (d.kelompok_id && !s.kelompok_fiskal.some((k) => k.id === d.kelompok_id)) throw new Error('Kelompok fiskal tidak ditemukan.');
+    const sup = d.supplier_id ? dariMaster('supplier', d.supplier_id) : null;
+    if (d.supplier_id && !sup) throw new Error('Supplier wajib dipilih dari master Supplier.');
+    const pem = d.pemegang_id ? dariMaster('sdm', d.pemegang_id) : null;
+    if (d.pemegang_id && !pem) throw new Error('Pemegang wajib dipilih dari data SDM.');
+    const lok = d.lokasi_id ? s.aset_lokasi.find((x) => x.id === d.lokasi_id) : null;
+    if (d.lokasi_id && !lok) throw new Error('Lokasi tidak ditemukan.');
+    const kondisi = d.kondisi || 'Baik', status = d.status || 'Aktif';
+    if (!KONDISI_ASET.includes(kondisi)) throw new Error('Kondisi tidak dikenal.');
+    if (!STATUS_ASET.includes(status)) throw new Error('Status tidak dikenal.');
+    let lepas = null, jual = 0, rekJual = null;
+    if (status !== 'Aktif') {
+      lepas = d.tgl_pelepasan || null;
+      jual = status === 'Dijual' ? (d.nilai_jual === '' || d.nilai_jual == null ? -1 : +d.nilai_jual) : 0;
+      if (!lepas) throw new Error('Tanggal pelepasan wajib diisi.');
+      if (lepas < tgl) throw new Error('Tanggal pelepasan tidak boleh sebelum tanggal perolehan.');
+      if (lepas > hariIni()) throw new Error('Tanggal pelepasan tidak boleh di masa depan.');
+      if (!Number.isInteger(jual) || jual < 0) throw new Error('Nilai jual wajib diisi (rupiah utuh, 0 atau lebih).');
+      if (!String(d.alasan_pelepasan || '').trim()) throw new Error('Alasan pelepasan wajib diisi.');
+      if (jual > 0) {
+        rekJual = d.rekening_jual_id || null;
+        if (!rekeningBoleh(s, rekJual, lama?.rekening_jual_id)) throw new Error('Rekening penerima hasil penjualan wajib dipilih (rekening aktif).');
+      }
+      if (lama && servisAset(s, id).some((x) => x.tanggal > lepas)) throw new Error('Ada servis setelah tanggal pelepasan. Hapus atau ubah servis itu dulu.');
+    }
+    const isiBeli = {tgl_perolehan: tgl, harga, ppn, ppn_kredit: kredit, biaya_tambahan: bt, diskon, cara: d.cara, rekening_id: d.cara === 'tunai' ? d.rekening_id : null, kategori_id: kat.id};
+    const beliBerubah = !lama || !sama(lama, isiBeli, BELI);
+    if (lama && lama.status !== 'Aktif' && status !== 'Aktif'
+      && (beliBerubah || !sama(lama, {tgl_mulai: mulai, umur_bulan: umur, residu}, ['tgl_mulai', 'umur_bulan', 'residu']))) {
+      throw new Error('Aset ini sudah dilepas: nilai perolehan dan penyusutannya tidak bisa diubah. Ubah status ke Aktif dulu bila perlu koreksi.');
+    }
+    if (beliBerubah) { if (lama) cekBuka(s, lama.tgl_perolehan); cekBuka(s, tgl); }
+    const a = {...(lama || {id: idBaru(), kode: kodeAsetBerikut(kat.prefix, s.aset.map((x) => x.kode)), hutang_id: null, dibuat: waktuDi(s, 'aset'), dibuat_oleh: email}),
+      nama: d.nama.trim(), no_seri: String(d.no_seri || '').trim() || null, supplier_id: sup?.id || null, supplier_nama: sup?.nama || null,
+      faktur: d.faktur || [], foto: d.foto || [], ...isiBeli, nilai_perolehan: nilai, di_bawah_batas: nilai < batas,
+      tgl_mulai: mulai, umur_bulan: umur, residu, kelompok_id: d.kelompok_id || null, bulan_fiskal: bulanDari(d.bulan_fiskal || tgl),
+      pemegang_id: pem?.id || null, pemegang_nama: pem?.nama || null, lokasi_id: lok?.id || null, kondisi, status, tgl_pelepasan: lepas, nilai_jual: jual,
+      rekening_jual_id: rekJual, alasan_pelepasan: status !== 'Aktif' ? d.alasan_pelepasan.trim() : null, catatan: d.catatan || null,
+      akumulasi_lepas: null, nilai_buku_lepas: null, laba_lepas: null};
+    if (lepas) {
+      const akum = akumulasiSampai(a, kat, servisAset(s, a.id), idxBulan(lepas) - 1), perolehan = perolehanPada(a, servisAset(s, a.id), lepas);
+      Object.assign(a, {akumulasi_lepas: akum, nilai_buku_lepas: perolehan - akum, laba_lepas: jual - (perolehan - akum)});
+    }
+    const hasil = simpanBaris(s, 'aset', lama, a);
+    const LEPAS = ['status', 'tgl_pelepasan', 'nilai_jual', 'rekening_jual_id', 'akumulasi_lepas', 'nilai_buku_lepas'];
+    const lepasBerubah = !dulu || !sama(dulu, hasil, LEPAS) || (beliBerubah && hasil.status !== 'Aktif');
+    if (lepasBerubah) { cekBuka(s, dulu?.tgl_pelepasan); cekBuka(s, hasil.tgl_pelepasan); }
+    if (beliBerubah) jurnalAset(s, hasil.id);
+    if (lepasBerubah) jurnalPelepasan(s, hasil.id);
+    const namaLokasi = (lid) => s.aset_lokasi.find((x) => x.id === lid)?.nama || null;
+    if (!dulu && (hasil.pemegang_id || hasil.lokasi_id)) {
+      simpanBaris(s, 'aset_mutasi', null, {id: idBaru(), aset_id: hasil.id, tanggal: d.tgl_mutasi || tgl, dari_pemegang: null, ke_pemegang: hasil.pemegang_nama,
+        dari_lokasi: null, ke_lokasi: namaLokasi(hasil.lokasi_id), catatan: d.catatan_mutasi || 'Penempatan awal', dibuat: waktuDi(s, 'aset_mutasi'), dibuat_oleh: email});
+    } else if (dulu && (dulu.pemegang_id !== hasil.pemegang_id || dulu.lokasi_id !== hasil.lokasi_id)) {
+      simpanBaris(s, 'aset_mutasi', null, {id: idBaru(), aset_id: hasil.id, tanggal: d.tgl_mutasi || hariIni(), dari_pemegang: dulu.pemegang_nama, ke_pemegang: hasil.pemegang_nama,
+        dari_lokasi: namaLokasi(dulu.lokasi_id), ke_lokasi: namaLokasi(hasil.lokasi_id), catatan: d.catatan_mutasi || null, dibuat: waktuDi(s, 'aset_mutasi'), dibuat_oleh: email});
+    }
+    return hasil;
+  };
+  const hapusAsetDi = (s, id) => {
+    const a = asetDari(s, id);
+    if (!a) return;
+    if (servisAset(s, id).length) throw new Error('Aset ini punya riwayat servis. Hapus servisnya dulu, atau ubah status aset (dijual / dihapuskan).');
+    const bulanPb = new Map(s.penyusutan_bulan.map((b) => [b.id, b.bulan]));
+    const pa = s.penyusutan_aset.filter((x) => x.aset_id === id);
+    if (pa.some((x) => terkunci(s, bulanPb.get(x.bulan_id)))) {
+      throw new Error('Penyusutan aset ini sudah dibukukan di bulan yang ditutup. Aset tidak bisa dihapus; ubah statusnya (dihapuskan) bila perlu.');
+    }
+    cekBuka(s, a.tgl_perolehan); cekBuka(s, a.tgl_pelepasan);
+    for (const x of pa) {
+      s.penyusutan_aset = s.penyusutan_aset.filter((y) => y !== x);
+      const b = s.penyusutan_bulan.find((y) => y.id === x.bulan_id);
+      simpanBaris(s, 'penyusutan_bulan', b, {...b, total: s.penyusutan_aset.filter((y) => y.bulan_id === b.id).reduce((t, y) => t + y.jumlah, 0)});
+      jurnalPenyusutan(s, b.id);
+    }
+    for (const t of ['aset_mutasi', 'aset_dokumen']) for (const x of s[t].filter((y) => y.aset_id === id)) hapusBaris(s, t, x);
+    hapusBaris(s, 'aset', a);
+    jurnalAset(s, id); jurnalPelepasan(s, id);
+  };
+  const simpanServisDi = (s, id, d) => {
+    const lama = id ? s.aset_servis.find((x) => x.id === id) : null;
+    if (id && !lama) throw new Error('Servis tidak ditemukan.');
+    const a = asetDari(s, lama?.aset_id || d.aset_id);
+    if (!a) throw new Error('Aset tidak ditemukan.');
+    const kat = katDari(s, a.kategori_id), tgl = d.tanggal || null;
+    if (!tgl) throw new Error('Tanggal servis wajib diisi.');
+    if (tgl < a.tgl_perolehan) throw new Error('Tanggal servis tidak boleh sebelum tanggal perolehan aset.');
+    if (a.status !== 'Aktif' && tgl > a.tgl_pelepasan) throw new Error('Aset sudah dilepas; servis setelah tanggal pelepasan tidak bisa dicatat.');
+    if (!String(d.uraian || '').trim()) throw new Error('Uraian servis wajib diisi.');
+    const biaya = uangSah(d.biaya, 'Biaya tidak boleh minus.');
+    if (biaya > 0 && !rekeningBoleh(s, d.rekening_id, lama?.rekening_id)) throw new Error('Rekening pembayar wajib dipilih (rekening aktif).');
+    const kap = !!d.kapitalisasi;
+    let sisa = null;
+    if (kap) {
+      const batas = +s.akuntansi.batas_kapitalisasi || 0;
+      if (biaya < batas) throw new Error('Servis hanya bisa dikapitalisasi bila biayanya mencapai batas kapitalisasi (Rp ' + fmt(batas) + ').');
+      if (a.status !== 'Aktif') throw new Error('Aset sudah dilepas; servis tidak bisa dikapitalisasi.');
+      if (kat.disusutkan && a.umur_bulan != null) {
+        if (tgl < a.tgl_mulai) throw new Error('Servis yang dikapitalisasi harus bertanggal sejak aset mulai digunakan.');
+        sisa = d.sisa_umur_bulan === '' || d.sisa_umur_bulan == null ? null : +d.sisa_umur_bulan;
+        if (!(Number.isInteger(sisa) && sisa > 0)) throw new Error('Isi sisa umur (bulan) setelah servis, lebih dari 0.');
+      }
+    }
+    const ven = d.vendor_id ? dariMaster('supplier', d.vendor_id) : null;
+    if (d.vendor_id && !ven) throw new Error('Vendor / bengkel wajib dipilih dari master Supplier.');
+    if (lama) cekBuka(s, lama.tanggal);
+    cekBuka(s, tgl);
+    const x = {...(lama || {id: idBaru(), aset_id: a.id, dibuat: waktuDi(s, 'aset_servis'), dibuat_oleh: email}), tanggal: tgl, uraian: d.uraian.trim(), biaya,
+      vendor_id: ven?.id || null, vendor_nama: ven?.nama || null, nota: d.nota || null, rekening_id: biaya > 0 ? d.rekening_id : null, kapitalisasi: kap, sisa_umur_bulan: sisa};
+    const hasil = simpanBaris(s, 'aset_servis', lama, x);
+    jurnalServis(s, hasil.id);
+    return hasil;
+  };
+  const bukukanDi = (s, sampai) => {
+    const awal = [...s.aset.filter((a) => katDari(s, a.kategori_id)?.disusutkan && a.umur_bulan > 0 && a.tgl_mulai).map((a) => idxBulan(a.tgl_mulai)),
+      ...s.penyusutan_bulan.map((b) => idxBulan(b.bulan))];
+    if (!awal.length) return 0;
+    let berubah = 0;
+    for (let X = Math.min(...awal), akhir = idxBulan(sampai || hariIni()); X <= akhir; X++) {
+      const bulan = bulanKe(X);
+      if (terkunci(s, bulan)) continue;
+      const bulanPb = new Map(s.penyusutan_bulan.map((b) => [b.id, b.bulan]));
+      const ingin = new Map();
+      for (const a of s.aset) {
+        const sebelum = s.penyusutan_aset.filter((pa) => pa.aset_id === a.id && bulanPb.get(pa.bulan_id) < bulan).reduce((t, pa) => t + pa.jumlah, 0);
+        const j = akumulasiSampai(a, katDari(s, a.kategori_id), servisAset(s, a.id), X) - sebelum;
+        if (j) ingin.set(a.id, j);
+      }
+      let pb = s.penyusutan_bulan.find((b) => b.bulan === bulan);
+      const ada = new Map(pb ? s.penyusutan_aset.filter((x) => x.bulan_id === pb.id).map((x) => [x.aset_id, x.jumlah]) : []);
+      if (ada.size === ingin.size && [...ingin].every(([k, v]) => ada.get(k) === v)) continue;
+      berubah++;
+      if (!ingin.size) {
+        s.penyusutan_aset = s.penyusutan_aset.filter((x) => x.bulan_id !== pb.id);
+        hapusBaris(s, 'penyusutan_bulan', pb);
+        jurnalPenyusutan(s, pb.id);
+        continue;
+      }
+      if (!pb) pb = simpanBaris(s, 'penyusutan_bulan', null, {id: idBaru(), bulan, total: 0, dibuat: sekarang(), dibuat_oleh: email});
+      s.penyusutan_aset = s.penyusutan_aset.filter((x) => x.bulan_id !== pb.id).concat([...ingin].map(([aset_id, jumlah]) => ({bulan_id: pb.id, aset_id, jumlah})));
+      simpanBaris(s, 'penyusutan_bulan', pb, {...pb, total: [...ingin.values()].reduce((t, v) => t + v, 0)});
+      jurnalPenyusutan(s, pb.id);
+    }
+    return berubah;
+  };
+  // Pengaturan aset: kelompok fiskal, kategori, lokasi.
+  const unikNama = (s, tabel, x, label) => {
+    if (!String(x.nama || '').trim()) throw new Error('Nama ' + label + ' wajib diisi.');
+    if (s[tabel].some((y) => y.id !== x.id && y.nama.trim().toLowerCase() === x.nama.trim().toLowerCase())) throw new Error('Nama ' + label + ' "' + x.nama.trim() + '" sudah dipakai.');
+  };
+  const simpanKelompokDi = (s, id, d) => {
+    const lama = id ? s.kelompok_fiskal.find((x) => x.id === id) : null;
+    const x = {...(lama || {id: idBaru(), urut: s.kelompok_fiskal.length + 1, aktif: true}), ...d};
+    unikNama(s, 'kelompok_fiskal', x, 'kelompok');
+    x.nama = x.nama.trim();
+    if (!(Number.isInteger(+x.masa_tahun) && +x.masa_tahun >= 1 && +x.masa_tahun <= 100)) throw new Error('Masa manfaat harus 1–100 tahun.');
+    if (!(Number.isInteger(+x.tarif_gl_bp) && +x.tarif_gl_bp >= 1 && +x.tarif_gl_bp <= 10000)) throw new Error('Tarif garis lurus harus di atas 0 sampai 100%.');
+    if (x.tarif_sm_bp != null && !(Number.isInteger(+x.tarif_sm_bp) && +x.tarif_sm_bp >= 1 && +x.tarif_sm_bp <= 10000)) throw new Error('Tarif saldo menurun harus di atas 0 sampai 100%, atau dikosongkan (bangunan).');
+    return simpanBaris(s, 'kelompok_fiskal', lama, x);
+  };
+  const simpanKategoriDi = (s, id, d) => {
+    const lama = id ? katDari(s, id) : null;
+    const x = {...(lama || {id: idBaru(), urut: s.aset_kategori.length + 1, aktif: true}), ...d};
+    unikNama(s, 'aset_kategori', x, 'kategori');
+    x.nama = x.nama.trim(); x.prefix = String(x.prefix || '').trim().toUpperCase();
+    if (!prefixSah(x.prefix)) throw new Error('Prefix kode 1–6 huruf besar atau angka (mis. KND).');
+    if (s.aset_kategori.some((y) => y.id !== x.id && y.prefix === x.prefix)) throw new Error('Prefix ' + x.prefix + ' sudah dipakai kategori lain.');
+    if (!['berwujud', 'tak_berwujud'].includes(x.jenis)) throw new Error('Jenis kategori wajib dipilih.');
+    x.disusutkan = !!x.disusutkan;
+    if (x.umur_bulan != null && !(Number.isInteger(+x.umur_bulan) && +x.umur_bulan >= 1 && +x.umur_bulan <= 1200)) throw new Error('Umur ekonomis default harus lebih dari 0 (atau dikosongkan).');
+    if (x.kelompok_id && !s.kelompok_fiskal.some((k) => k.id === x.kelompok_id)) throw new Error('Kelompok fiskal tidak ditemukan.');
+    for (const [k, label, wajib] of [['akun_aset_id', 'Akun aset', true], ['akun_akumulasi_id', 'Akun akumulasi', x.disusutkan], ['akun_beban_id', 'Akun beban penyusutan', x.disusutkan]]) {
+      if (wajib && !s.akun.some((a) => a.id === x[k])) throw new Error(label + ' wajib dipilih.');
+    }
+    if (!x.disusutkan) { x.akun_akumulasi_id = x.akun_akumulasi_id || null; x.akun_beban_id = x.akun_beban_id || null; }
+    return simpanBaris(s, 'aset_kategori', lama, x);
+  };
+  const simpanLokasiDi = (s, id, d) => {
+    const lama = id ? s.aset_lokasi.find((x) => x.id === id) : null;
+    const x = {...(lama || {id: idBaru(), aktif: true, dibuat: sekarang()}), ...d};
+    unikNama(s, 'aset_lokasi', x, 'lokasi');
+    x.nama = x.nama.trim();
+    return simpanBaris(s, 'aset_lokasi', lama, x);
+  };
+  const simpanDokumenDi = (s, id, d) => {
+    const lama = id ? s.aset_dokumen.find((x) => x.id === id) : null;
+    if (!asetDari(s, lama?.aset_id || d.aset_id)) throw new Error('Aset tidak ditemukan.');
+    if (!JENIS_DOKUMEN_ASET.includes(d.jenis)) throw new Error('Jenis dokumen wajib dipilih.');
+    const x = {...(lama || {id: idBaru(), aset_id: d.aset_id, dibuat: waktuDi(s, 'aset_dokumen'), dibuat_oleh: email}), jenis: d.jenis, berlaku_sd: d.berlaku_sd || null,
+      file: d.file || null, catatan: d.catatan || null};
+    return simpanBaris(s, 'aset_dokumen', lama, x);
   };
   return {
     mode: 'lokal',
@@ -864,6 +1181,7 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
         if (gf) throw new Error(gf);
         if (!Number.isInteger(baru.jatuh_tempo_hari) || baru.jatuh_tempo_hari < 0 || baru.jatuh_tempo_hari > 365) throw new Error('Jatuh tempo bawaan harus 0 sampai 365 hari.');
         if (baru.batas_pinjam_titipan_persen === '' || baru.batas_pinjam_titipan_persen === undefined) baru.batas_pinjam_titipan_persen = null;
+        if (!['garis_lurus', 'saldo_menurun'].includes(baru.metode_fiskal || 'garis_lurus')) throw new Error('Metode penyusutan fiskal tidak dikenal.');
         if (baru.batas_pinjam_titipan_persen != null && !(Number.isInteger(baru.batas_pinjam_titipan_persen) && baru.batas_pinjam_titipan_persen >= 0 && baru.batas_pinjam_titipan_persen <= 100)) {
           throw new Error('Batas pinjaman dari dana titipan harus 0 sampai 100% (kosongkan bila tanpa batas).');
         }
@@ -1120,6 +1438,18 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
     },
     async simpanPengembalian(id, d) { return ubah((s) => simpanPengembalianDi(s, id, d)); },
     async hapusPengembalian(id) { return ubah((s) => { const x = s.pengembalian_pinjaman.find((y) => y.id === id); if (x) hapusBaris(s, 'pengembalian_pinjaman', x); }); },
+    async simpanAset(id, d) { return ubah((s) => simpanAsetDi(s, id, d)); },
+    async hapusAset(id) { return ubah((s) => hapusAsetDi(s, id)); },
+    async simpanServisAset(id, d) { return ubah((s) => simpanServisDi(s, id, d)); },
+    async hapusServisAset(id) {
+      return ubah((s) => { const x = s.aset_servis.find((y) => y.id === id); if (!x) return; cekBuka(s, x.tanggal); hapusBaris(s, 'aset_servis', x); jurnalServis(s, id); });
+    },
+    async bukukanPenyusutan(sampai) { return ubah((s) => bukukanDi(s, sampai)); },
+    async simpanKelompokFiskal(id, d) { return ubah((s) => simpanKelompokDi(s, id, d)); },
+    async simpanKategoriAset(id, d) { return ubah((s) => simpanKategoriDi(s, id, d)); },
+    async simpanLokasiAset(id, d) { return ubah((s) => simpanLokasiDi(s, id, d)); },
+    async simpanDokumenAset(id, d) { return ubah((s) => simpanDokumenDi(s, id, d)); },
+    async hapusDokumenAset(id) { return ubah((s) => { const x = s.aset_dokumen.find((y) => y.id === id); if (x) hapusBaris(s, 'aset_dokumen', x); }); },
     async statusNotifikasi() { return K.notifikasi_status.slice(); },
     async aturStatusNotifikasi(daftar) {
       for (const st of daftar) {
@@ -1171,6 +1501,16 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
         for (const b of s.pembayaran_vendor) jurnalBayarVendor(s, b);
         for (const b of s.pembelian) jurnalPembelian(s, b);
         for (const b of s.pembayaran_supplier) jurnalBayarSupplier(s, b);
+        if (p.aset_kategori) {
+          s.kelompok_fiskal = (p.kelompok_fiskal || []).map((x) => ({...x}));
+          s.aset_lokasi = (p.aset_lokasi || []).map((x) => ({...x}));
+          s.aset_kategori = p.aset_kategori.map((x) => ({...x, akun_aset_id: peta(x.akun_aset_id), akun_akumulasi_id: x.akun_akumulasi_id && peta(x.akun_akumulasi_id),
+            akun_beban_id: x.akun_beban_id && peta(x.akun_beban_id)}));
+        }
+        if (p.aset) for (const t of ['aset', 'aset_mutasi', 'aset_servis', 'aset_dokumen', 'penyusutan_bulan', 'penyusutan_aset']) s[t] = (p[t] || []).map((x) => ({...x}));
+        for (const a of s.aset) { jurnalAset(s, a.id); jurnalPelepasan(s, a.id); }
+        for (const x of s.aset_servis) jurnalServis(s, x.id);
+        for (const b of s.penyusutan_bulan) jurnalPenyusutan(s, b.id);
         s.tutup_buku = (p.tutup_buku || []).map((t) => ({bulan: t.bulan, ditutup_oleh: email, ditutup_pada: sekarang()}));
         if (p.perusahaan) s.perusahaan.data = p.perusahaan;
       });
@@ -1187,6 +1527,7 @@ export function cadanganDari(K) {
     tutup_buku: K.tutup_buku.map((t) => ({bulan: t.bulan})), akuntansi: K.akuntansi, perusahaan: K.perusahaan?.data || {},
     kontrak_klien: K.kontrak_klien || [], kontrak_addendum: K.kontrak_addendum || [], termin: K.termin || [], penerimaan: K.penerimaan || [],
     ...Object.fromEntries(TABEL_PROYEK.map((t) => [t, K[t] || []])),
+    ...(K.aset_siap === false ? {} : Object.fromEntries(TABEL_ASET.map((t) => [t, K[t] || []]))),
   };
 }
 
@@ -1230,8 +1571,18 @@ export function mesinSupabase(sb) {
         } catch (e) {
           if (!belumAda(e)) throw e;
         }
+        // Tahap 5: aset dan penyusutan.
+        let asetKeu = {aset_siap: false, ...Object.fromEntries(TABEL_ASET.map((t) => [t, []]))};
+        try {
+          const URUT = {kelompok_fiskal: 'urut', aset_kategori: 'urut', aset_lokasi: 'nama', aset: 'kode', aset_mutasi: 'tanggal', aset_servis: 'tanggal', aset_dokumen: 'dibuat',
+            penyusutan_bulan: 'bulan', penyusutan_aset: 'bulan_id'};
+          const isi = await Promise.all(TABEL_ASET.map((t) => semua(t, URUT[t])));
+          asetKeu = {aset_siap: true, ...Object.fromEntries(TABEL_ASET.map((t, i) => [t, isi[i]]))};
+        } catch (e) {
+          if (!belumAda(e)) throw e;
+        }
         return {siap: true, akun, rekening, kas_transaksi, transfer, jurnal, jurnal_baris, pemetaan_jurnal, tutup_buku, tutup_buku_riwayat,
-          akuntansi: {...AKUNTANSI_BAWAAN, ...akuntansi[0]}, perusahaan: perusahaan[0] || {data: {}}, peran, ...kontrak, ...proyekKeu};
+          akuntansi: {...AKUNTANSI_BAWAAN, ...akuntansi[0]}, perusahaan: perusahaan[0] || {data: {}}, peran, ...kontrak, ...proyekKeu, ...asetKeu};
       } catch (e) {
         if (belumAda(e)) return {...kosongKeuangan(), siap: false};
         throw e;
@@ -1290,7 +1641,10 @@ export function mesinSupabase(sb) {
     async hapusBayarVendor(id) { cek(await sb.rpc('hapus_bayar_vendor', {p_id: id})); },
     async simpanPembelian(id, d, baris) {
       const isi = Object.fromEntries(KOLOM_PEMBELIAN.map((c) => [c, d[c] ?? null]));
-      return cek(await sb.rpc('simpan_pembelian', {p_id: id || null, p: isi, p_baris: baris.map(({barang_id, qty, satuan, harga, diskon}) => ({barang_id, qty: String(qty), satuan, harga, diskon: diskon || 0}))}));
+      const hasil = cek(await sb.rpc('simpan_pembelian', {p_id: id || null, p: isi, p_baris: baris.map(({barang_id, qty, satuan, harga, diskon}) => ({barang_id, qty: String(qty), satuan, harga, diskon: diskon || 0}))}));
+      // Tahap 5: tanda barang modal di bawah batas kapitalisasi (stok kantor).
+      if (d.barang_modal !== undefined) cek(await sb.rpc('tandai_barang_modal', {p_id: hasil, p_nilai: !!d.barang_modal}));
+      return hasil;
     },
     async hapusPembelian(id) { cek(await sb.rpc('hapus_pembelian', {p_id: id})); },
     async simpanBayarSupplier(id, d) { return cek(await sb.rpc('simpan_bayar_supplier', {p_id: id || null, p: d})); },
@@ -1299,6 +1653,16 @@ export function mesinSupabase(sb) {
     async hapusPinjaman(id) { cek(await sb.rpc('hapus_pinjaman', {p_id: id})); },
     async simpanPengembalian(id, d) { return cek(await sb.rpc('simpan_pengembalian', {p_id: id || null, p: d})); },
     async hapusPengembalian(id) { cek(await sb.rpc('hapus_pengembalian', {p_id: id})); },
+    async simpanAset(id, d) { return cek(await sb.rpc('simpan_aset', {p_id: id || null, p: Object.fromEntries(KOLOM_ASET.map((c) => [c, d[c] ?? null]))})); },
+    async hapusAset(id) { cek(await sb.rpc('hapus_aset', {p_id: id})); },
+    async simpanServisAset(id, d) { return cek(await sb.rpc('simpan_servis_aset', {p_id: id || null, p: d})); },
+    async hapusServisAset(id) { cek(await sb.rpc('hapus_servis_aset', {p_id: id})); },
+    async bukukanPenyusutan(sampai) { return cek(await sb.rpc('bukukan_penyusutan', {p_sampai: sampai || null})); },
+    async simpanKelompokFiskal(id, d) { return tulisBaris('kelompok_fiskal', id, d); },
+    async simpanKategoriAset(id, d) { return tulisBaris('aset_kategori', id, d); },
+    async simpanLokasiAset(id, d) { return tulisBaris('aset_lokasi', id, d); },
+    async simpanDokumenAset(id, d) { return tulisBaris('aset_dokumen', id, d); },
+    async hapusDokumenAset(id) { cek(await sb.from('aset_dokumen').delete().eq('id', id)); },
     async statusNotifikasi() {
       const {data, error} = await sb.from('notifikasi_status').select('kunci,dibaca,tunda_sampai');
       return error ? [] : data;
@@ -1315,7 +1679,7 @@ export function mesinSupabase(sb) {
 export const kosongKeuangan = () => ({akun: [], rekening: [], kas_transaksi: [], transfer: [], jurnal: [], jurnal_baris: [], pemetaan_jurnal: PEMETAAN,
   tutup_buku: [], tutup_buku_riwayat: [], akuntansi: {...AKUNTANSI_BAWAAN}, perusahaan: {data: {}}, peran: [],
   kontrak_siap: false, kontrak_klien: [], kontrak_addendum: [], termin: [], penerimaan: [],
-  proyek_siap: false, ...Object.fromEntries(TABEL_PROYEK.map((t) => [t, []]))});
+  proyek_siap: false, ...Object.fromEntries(TABEL_PROYEK.map((t) => [t, []])), aset_siap: false, ...Object.fromEntries(TABEL_ASET.map((t) => [t, []]))});
 
 // Pesan database yang teknis -> kalimat untuk pengguna.
 function terjemah(m) {
@@ -1326,6 +1690,17 @@ function terjemah(m) {
   if (/kontrak_klien_no_unik/.test(m)) return 'No. kontrak itu sudah dipakai kontrak lain.';
   if (/kontrak_addendum_no_unik/.test(m)) return 'No. addendum itu sudah dipakai di kontrak ini.';
   if (/termin_invoice_unik/.test(m)) return 'Nomor invoice bentrok dengan invoice lain. Coba simpan lagi.';
+  if (/aset_kode_key/.test(m)) return 'Kode aset bentrok dengan aset lain. Coba simpan lagi.';
+  if (/aset_kategori_nama_key/.test(m)) return 'Nama kategori itu sudah dipakai.';
+  if (/aset_kategori_prefix_key/.test(m)) return 'Prefix kode itu sudah dipakai kategori lain.';
+  if (/aset_kategori_prefix_check/.test(m)) return 'Prefix kode 1–6 huruf besar atau angka (mis. KND).';
+  if (/aset_kategori_check/.test(m)) return 'Kategori yang disusutkan wajib punya akun akumulasi dan akun beban penyusutan.';
+  if (/kelompok_fiskal_nama_key/.test(m)) return 'Nama kelompok fiskal itu sudah dipakai.';
+  if (/kelompok_fiskal_.*_check/.test(m)) return 'Masa manfaat 1–100 tahun dan tarif di atas 0 sampai 100%.';
+  if (/aset_lokasi_nama_key/.test(m)) return 'Nama lokasi itu sudah dipakai.';
+  if (/Could not find the function public\.(simpan_aset|hapus_aset|simpan_servis_aset|hapus_servis_aset|bukukan_penyusutan|tandai_barang_modal)/i.test(m)) {
+    return 'Database belum diperbarui. Jalankan SQL migrasi terbaru (5-aset.sql) di Supabase.';
+  }
   if (/Could not find the function|schema cache/i.test(m)) return 'Database belum diperbarui. Jalankan SQL migrasi terbaru (4-proyek.sql) di Supabase.';
   if (/row-level security|permission denied/i.test(m)) return 'Anda tidak punya hak untuk perubahan ini.';
   if (/foreign key/i.test(m)) return 'Data ini masih dipakai data lain, jadi tidak bisa dihapus.';

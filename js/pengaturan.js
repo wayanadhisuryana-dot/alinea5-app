@@ -11,6 +11,7 @@ import {JENIS_NOTIF, aturNotif} from './notifikasi.js';
 import {tabelRekening, bukaFormRekening, kartuBelumSiap} from './keuangan.js';
 import {GOLONGAN, saldoNormal, ISI_PEMETAAN, akunKode, urutKode, NAMA_BULAN_PANJANG} from './keuangan-data.js';
 import {eksporExcel} from './excel.js';
+import {bagianAset} from './aset.js';
 
 export const NAMA_APLIKASI_BAWAAN = 'Alinea 5';
 export const WARNA_BAWAAN = '#1d6b57';
@@ -28,6 +29,7 @@ const BAGIAN = [
   ['umum', 'Umum', () => hak('pengaturan') != null],
   ['sdm', 'SDM', () => hak('pengaturan') != null],
   ['barang', 'Barang & Harga', () => hak('pengaturan') != null],
+  ['aset', 'Aset', () => (hak('pengaturan') != null || hak('aset') != null) && modulAktif('aset')],
   ['dropdown', 'Pilihan dropdown', () => hak('pengaturan') != null],
   ['cadangan', 'Cadangan', () => hak('pengaturan') != null],
   ['audit', 'Audit log', () => S.user.super_admin || hak('jurnal') != null],
@@ -42,7 +44,7 @@ export function renderPengaturan(el, bagian) {
     : 'Penyimpanan: Supabase. Anda masuk sebagai ' + S.user.email + ' (' + namaPeran() + ').' + (ubahPengaturan() ? '' : ' Anda hanya bisa melihat pengaturan.'))));
   el.append(h('div', {class: 'tabs', role: 'tablist'}, boleh.map(([k, label]) => h('a', {class: 'tab', href: '#pengaturan-' + k, role: 'tab', 'aria-selected': String(k === aktif)}, label))));
   const isiBagian = {profil: bagianProfil, modul: bagianModul, pengguna: bagianPengguna, kas: bagianKas, akun: bagianAkun, pemetaan: bagianPemetaan,
-    akuntansi: bagianAkuntansi, notifikasi: bagianNotifikasi, umum: bagianUmum, sdm: () => [bagianJabatan(), bagianParamSdm()], barang: bagianBarang, dropdown: bagianDropdown,
+    akuntansi: bagianAkuntansi, notifikasi: bagianNotifikasi, umum: bagianUmum, sdm: () => [bagianJabatan(), bagianParamSdm()], barang: bagianBarang, aset: bagianAset, dropdown: bagianDropdown,
     cadangan: bagianCadangan, audit: bagianAudit}[aktif];
   if (isiBagian) el.append(...[].concat(isiBagian()).filter(Boolean));
   if (!ubahPengaturan()) el.querySelectorAll('.kartu.atur input, .kartu.atur select, .kartu.atur textarea, .kartu.atur button.btn-utama').forEach((x) => { x.disabled = true; });
@@ -322,10 +324,12 @@ function bagianPemetaan() {
   const urutJenis = ['saldo_awal', 'kas_masuk', 'kas_keluar', 'transfer', 'transfer_biaya', 'invoice_piutang', 'invoice_pendapatan', 'invoice_titipan', 'invoice_ppn',
     'terima_rekening', 'terima_potongan', 'terima_pendapatan', 'terima_titipan', 'terima_ppn', 'terima_piutang',
     'opname_beban', 'opname_titipan', 'opname_hutang', 'opname_retensi', 'bayar_vendor_hutang', 'bayar_vendor_retensi', 'bayar_vendor_kas', 'bayar_vendor_pajak',
-    'beli_material', 'beli_persediaan', 'beli_ppn', 'beli_titipan', 'beli_kas', 'beli_hutang', 'bayar_supplier_hutang', 'bayar_supplier_kas'];
+    'beli_material', 'beli_persediaan', 'beli_ppn', 'beli_titipan', 'beli_kas', 'beli_hutang', 'bayar_supplier_hutang', 'bayar_supplier_kas',
+    'aset_perolehan', 'aset_ppn', 'aset_kas', 'aset_hutang', 'susut_beban', 'susut_akumulasi', 'lepas_akumulasi', 'lepas_kas', 'lepas_rugi', 'lepas_laba', 'lepas_aset',
+    'servis_beban', 'servis_aset', 'servis_kas'];
   rows.sort((a, b) => urutJenis.indexOf(a.jenis) - urutJenis.indexOf(b.jenis) || a.urut - b.urut);
   return h('section', {class: 'kartu'}, h('h2', null, 'Pemetaan jurnal'),
-    h('p', null, 'Tabel ini menentukan akun debit dan kredit setiap jurnal otomatis. Tabel disimpan di database; aplikasi hanya membacanya. Jenis transaksi baru (aset, gaji, dan lainnya) ditambahkan pada tahap berikutnya.'),
+    h('p', null, 'Tabel ini menentukan akun debit dan kredit setiap jurnal otomatis. Tabel disimpan di database; aplikasi hanya membacanya. Jenis transaksi baru (gaji dan lainnya) ditambahkan pada tahap berikutnya.'),
     h('div', {class: 'alat'}, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: aman(() => eksporExcel('pemetaan-jurnal-' + hariIni() + '.xlsx', [{nama: 'Pemetaan jurnal', kolom: [
       {judul: 'Jenis transaksi', k: 'nama', lebar: 34}, {judul: 'Kode jenis', k: 'jenis', lebar: 16}, {judul: 'Sisi', k: 'sisi'}, {judul: 'Akun', k: 'akun_teks', lebar: 36}, {judul: 'Keterangan', k: 'keterangan', lebar: 60}], baris: rows}]))}, 'Ekspor Excel')),
     h('div', {class: 'gulir'}, h('table', {class: 'tabel'},
@@ -356,7 +360,7 @@ function bagianAkuntansi() {
     h('div', {class: 'form-grid'},
       medan('Basis pengakuan pendapatan', basis, {bantuan: 'Kas: pendapatan dicatat saat uang diterima; invoice tidak membuat jurnal. Akrual: pendapatan dicatat saat invoice terbit.'}),
       medan('Awal tahun buku', bulan, {bantuan: 'Bulan pertama periode buku.'}),
-      medan('Batas kapitalisasi aset', h('div', {class: 'berawalan'}, h('span', null, 'Rp'), batas), {id: 'ak-batas', bantuan: 'Pembelian barang di atas nilai ini dicatat sebagai aset (dipakai mulai Tahap 5).'}),
+      medan('Batas kapitalisasi aset', h('div', {class: 'berawalan'}, h('span', null, 'Rp'), batas), {id: 'ak-batas', bantuan: 'Barang modal dengan nilai perolehan di bawah nilai ini sebaiknya dicatat sebagai biaya; menu Aset meminta konfirmasi bila tetap dicatat sebagai aset. Juga batas minimal servis yang bisa dikapitalisasi.'}),
       medan('Tarif PPN', h('div', {class: 'berakhiran'}, tarif, h('span', null, '%')), {id: 'ak-ppn', bantuan: 'Dipakai untuk kontrak baru. Kontrak yang sudah ada tetap memakai tarif saat kontrak dibuat.'}),
       medan('Jatuh tempo invoice bawaan', h('div', {class: 'berakhiran'}, jatuhTempo, h('span', null, 'hari')), {id: 'ak-jt', bantuan: 'Dari tanggal invoice; bisa diubah per invoice.'}),
       tahap4 && medan('Batas pinjaman dari dana titipan', h('div', {class: 'berakhiran'}, batasPinjam, h('span', null, '%')), {id: 'ak-pinjam', bantuan: 'Opsional. Pinjaman antar proyek maksimal sekian persen dari saldo dana titipan proyek pemberi; lebih dari itu perlu konfirmasi pemilik (super admin). Kosongkan bila tanpa batas.'}),
@@ -397,8 +401,8 @@ function bagianNotifikasi() {
       h('thead', null, h('tr', null, ['Jenis', 'Aktif', 'Muncul H-', 'Catatan'].map((x) => h('th', null, x)))),
       h('tbody', null, Object.entries(JENIS_NOTIF).map(([k, j]) => {
         kotak[k] = {aktif: h('input', {type: 'checkbox', checked: atur[k].aktif, 'aria-label': 'Aktif ' + j.label}), hari: h('input', {type: 'number', min: '0', max: '365', step: '1', value: String(atur[k].hari), 'aria-label': 'Hari ' + j.label, class: 'angka-pendek'})};
-        return h('tr', null, h('td', null, j.label), h('td', {class: 'tengah-teks'}, kotak[k].aktif), h('td', null, h('div', {class: 'berakhiran'}, kotak[k].hari, h('span', null, 'hari'))),
-          h('td', {class: 'kecil redup'}, j.modul && !modulAktif(j.modul) ? 'Modul ' + MODUL[j.modul] + ' sedang mati.' : j.sdm ? 'Juga dipakai untuk tanda peringatan di tabel SDM.' : ''));
+        return h('tr', null, h('td', null, j.label), h('td', {class: 'tengah-teks'}, kotak[k].aktif), h('td', null, j.tanpaHari ? '—' : h('div', {class: 'berakhiran'}, kotak[k].hari, h('span', null, 'hari'))),
+          h('td', {class: 'kecil redup'}, j.modul && !modulAktif(j.modul) ? 'Modul ' + MODUL[j.modul] + ' sedang mati.' : j.sdm ? 'Juga dipakai untuk tanda peringatan di tabel SDM.' : j.tanpaHari ? 'Muncul selama kondisi aset "Perlu servis".' : k === 'aset' ? 'Juga dipakai untuk kolom Peringatan di daftar Aset.' : ''));
       })))),
     galat,
     h('div', {class: 'baris-tombol'}, h('button', {class: 'btn btn-utama', type: 'button', onclick: aman(async () => {
@@ -640,7 +644,9 @@ const NAMA_AUDIT = {rekening: 'Rekening', kas_transaksi: 'Kas umum', transfer: '
   kontrak_klien: 'Kontrak klien', kontrak_addendum: 'Addendum kontrak', termin: 'Termin / invoice', penerimaan: 'Penerimaan termin',
   kontrak_vendor: 'Kontrak vendor', kontrak_vendor_item: 'Item kontrak vendor', kontrak_vendor_termin: 'Termin kontrak vendor', opname: 'Opname',
   pembayaran_vendor: 'Pembayaran vendor', pembelian: 'Pembelian', pembelian_baris: 'Baris pembelian', pembayaran_supplier: 'Pembayaran supplier',
-  pinjaman_proyek: 'Pinjaman antar proyek', pengembalian_pinjaman: 'Pengembalian pinjaman'};
+  pinjaman_proyek: 'Pinjaman antar proyek', pengembalian_pinjaman: 'Pengembalian pinjaman',
+  aset: 'Aset', aset_kategori: 'Kategori aset', kelompok_fiskal: 'Kelompok fiskal', aset_lokasi: 'Lokasi aset', aset_mutasi: 'Mutasi aset', aset_servis: 'Servis aset',
+  aset_dokumen: 'Dokumen aset', penyusutan_bulan: 'Penyusutan bulanan'};
 const AKSI = {insert: 'Tambah', update: 'Ubah', delete: 'Hapus'};
 const ringkasNilai = (v) => (v == null ? '—' : typeof v === 'object' ? (v.nama || v.path ? v.nama || v.path : JSON.stringify(v).slice(0, 60)) : typeof v === 'number' ? idn(v) : String(v).slice(0, 60));
 function perubahan(lama, baru) {

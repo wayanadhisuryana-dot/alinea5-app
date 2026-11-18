@@ -61,7 +61,6 @@ export const OPSI_BISA_DIATUR = {
   jenisHutang: 'Jenis hutang (Hutang Lain)',
   peranTim: 'Peran di Tim Proyek (Proyek)',
   jenisDokumenKerja: 'Jenis dokumen kerja (SDM)',
-  kategoriAset: 'Kategori aset (Aset)',
   keahlianVendor: 'Keahlian (Vendor & Tukang)',
   kategoriBarang: 'Kategori barang (Barang & Harga, Supplier)',
   kategoriPekerjaan: 'Kategori pekerjaan (Barang & Harga → Harga Pekerjaan)',
@@ -237,7 +236,7 @@ export const TABEL = {
     isian: [], kolom: [],
   },
   aset: {
-    label: 'Aset', satuan: 'aset', grup: 'Administrasi', akses: 'admin', urut: 'kode_aset',
+    label: 'Aset', satuan: 'aset', grup: 'Administrasi', akses: 'admin', urut: 'kode_aset', tersembunyi: true, // sejak Tahap 5 di tabel aset
     bantuan: 'Penyusutan memakai garis lurus sederhana untuk kontrol internal, bukan perhitungan pajak.',
     isian: [
       {k: 'kode_aset', label: 'Kode aset', t: 'teks', contoh: 'AS-001'},

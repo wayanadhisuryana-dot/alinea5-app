@@ -297,6 +297,8 @@ export function bukaSumber(sumber, sumberId, jurnalId) {
   if (sumber === 'saldo_awal') { const r = rekeningDari(sumberId); if (r) return bukaFormRekening(r); }
   if (sumber === 'penerimaan') { const p = K().penerimaan?.find((x) => x.id === sumberId); if (p) { location.hash = '#piutang-' + p.termin_id; return; } }
   if (sumber === 'invoice' && K().termin?.some((x) => x.id === sumberId)) { location.hash = '#piutang-' + sumberId; return; }
+  if ((sumber === 'aset' || sumber === 'pelepasan_aset') && K().aset?.some((x) => x.id === sumberId)) { location.hash = '#aset-' + sumberId; return; }
+  if (sumber === 'servis_aset') { const s = K().aset_servis?.find((x) => x.id === sumberId); if (s) { S.tabAset = 'servis'; location.hash = '#aset-' + s.aset_id; return; } }
   const j = daftarJurnal(K()).find((x) => x.id === jurnalId);
   if (j) bukaFormJurnal(j);
 }
@@ -398,9 +400,14 @@ export function bukaFormKas(k, awal = {}) {
   const jumlah = uang('k-jumlah', k?.jumlah ?? '', {required: true});
   const uraian = h('textarea', {id: 'k-uraian', rows: '2', required: true}, k?.uraian ?? '');
   const bukti = pilihBukti('k-bukti', k?.bukti);
+  // Tahap 5: barang modal di bawah batas kapitalisasi (Laporan Pajak aset).
+  const asetSiap = K().aset_siap !== false && K().aset_kategori;
+  const modal = centang('k-modal', k?.barang_modal, 'Barang modal di bawah batas kapitalisasi');
+  const mModal = asetSiap && h('div', {class: 'medan medan-lebar'}, modal, h('span', {class: 'kecil redup'}, 'Centang untuk pengeluaran membeli barang modal (alat, perabot, elektronik) yang nilainya di bawah batas kapitalisasi sehingga dibebankan. Masuk Laporan Pajak aset → (c).'));
   const pratinjau = h('div', {class: 'kotak-info kecil'});
   const segar = () => {
     const jml = jumlah.nilai() || 0, a = akun.querySelector('input[type=hidden]').value, r = rek.value;
+    if (mModal) mModal.hidden = jenis.value !== 'keluar';
     const kasAkun = r ? akunRekening(K(), r) : null;
     const [d, kr] = jenis.value === 'masuk' ? [kasAkun?.id, a] : [a, kasAkun?.id];
     pratinjau.replaceChildren(...[h('b', null, 'Jurnal otomatis: '), 'D ' + (d ? namaAkun(d) : '…') + ' ' + rp(jml) + ' / K ' + (kr ? namaAkun(kr) : '…') + ' ' + rp(jml),
@@ -418,6 +425,7 @@ export function bukaFormKas(k, awal = {}) {
       tanggal: tglEl.value, jenis: jenis.value, rekening_id: rek.value, akun_id: akun.querySelector('input[type=hidden]').value,
       proyek_kode: proyek.querySelector('input[type=hidden]').value || null, pihak: form.querySelector('#k-pihak').value.trim() || null,
       jumlah: jumlah.nilai(), uraian: uraian.value.trim(),
+      ...(asetSiap ? {barang_modal: jenis.value === 'keluar' && modal.querySelector('input').checked} : {}),
     };
     if (!data.tanggal) { galat.textContent = 'Tanggal wajib diisi.'; return; }
     if (!data.rekening_id) { galat.textContent = 'Rekening wajib dipilih.'; rek.focus(); return; }
@@ -440,7 +448,7 @@ export function bukaFormKas(k, awal = {}) {
       medan('Rekening', rek, {wajib: true}), medan('Akun', akun, {wajib: true, id: 'k-akun-cari', bantuan: 'Lawan dari rekening, mis. 6-3 Listrik untuk bayar listrik.'}),
       medan('Proyek', proyek, {id: 'k-proyek-cari'}), medan('Pihak', h('div', null, pihak), {id: 'k-pihak'}),
       medan('Jumlah', jumlah.el, {wajib: true, id: 'k-jumlah'}), medan('Uraian', uraian, {wajib: true, lebar: true}),
-      bukti.el),
+      mModal, bukti.el),
     pratinjau, galat,
     kaki(k && bisa && tombolHapus(async () => { await store.keu.hapusKas(k.id); dlg.close(); await segarkanKeuangan(); pesan('Transaksi dihapus beserta jurnalnya.'); }),
       h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, bisa ? 'Batal' : 'Tutup'), bisa && simpan));
@@ -663,7 +671,10 @@ function panelTutupBuku(panel) {
             : b < ini && khusus('tutup_buku') && h('button', {class: 'btn btn-kecil', type: 'button', onclick: aman(async (ev) => {
               const tb = ev.currentTarget;
               if (tb.dataset.yakin !== '1') { tb.dataset.yakin = '1'; tb.textContent = 'Klik lagi untuk menutup ' + namaBulan(b); return; }
-              await store.keu.tutupBulan(b); await segarkanKeuangan(); pesan('Buku ' + namaBulan(b) + ' ditutup.');
+              // Penyusutan aset bulan itu dibukukan dulu agar ikut terkunci.
+              let susut = 0;
+              if (K().aset_siap !== false && K().aset?.length && bisaUbah('aset')) susut = await store.keu.bukukanPenyusutan(b.slice(0, 8) + String(new Date(Date.UTC(+b.slice(0, 4), +b.slice(5, 7), 0)).getUTCDate()).padStart(2, '0'));
+              await store.keu.tutupBulan(b); await segarkanKeuangan(); pesan('Buku ' + namaBulan(b) + ' ditutup.' + (susut ? ' Penyusutan aset dibukukan lebih dulu.' : ''));
             })}, 'Tutup buku')));
       }) : h('tr', null, h('td', {colspan: '5', class: 'redup'}, 'Belum ada jurnal.'))))),
     K().tutup_buku_riwayat.length > 0 && [h('h3', null, 'Riwayat tutup / buka buku'), h('div', {class: 'gulir'}, h('table', {class: 'tabel'},

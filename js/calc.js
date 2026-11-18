@@ -3,6 +3,7 @@ import {TAHAP, TOLERANSI} from './schema.js';
 import {normNama, kontakDari} from './klien-util.js';
 import {ringkasPiutang, ringkasUmur} from './kontrak-util.js';
 import {ringkasVendor, ringkasPembelian, ringkasPinjaman, dompetProyek} from './proyek-util.js';
+import {ringkasAset} from './aset-util.js';
 import {aturSdm, cariJabatan, kontrakDari, dokumenDari, gajiSaatIni, gajiDari, totalGaji, peringatanPegawai, masaKerja, bawaanTimProyek, refSdm, STATUS, STATUS_PENDEK} from './sdm-util.js';
 
 export const n = (v) => (v == null || v === '' || isNaN(+v) ? 0 : +v);
@@ -109,11 +110,9 @@ export function hitung(db, today = hariIni(), atur = {}, keu = {}) {
     };
   });
 
-  const aset = t('aset').map((a) => {
-    const susut = n(a.umur) ? n(a.harga) / n(a.umur) : null;
-    const nilai_buku = susut == null || !a.tgl_beli ? n(a.harga) : Math.max(0, n(a.harga) - susut * hari(today, a.tgl_beli) / 365.25);
-    return {...a, susut, nilai_buku, alert: batasHari(a.lisensi_sd, today, 60, '≤60 hari')};
-  });
+  // Aset (Tahap 5, tabel keuangan): nilai per hari ini dan peringatan dokumen / kondisi.
+  const hariDok = atur?.notifikasi?.aset?.hari;
+  const aset = keu.aset_siap === false || !keu.aset ? [] : ringkasAset(keu, today, {hariDokumen: hariDok != null && hariDok !== '' && Number.isFinite(+hariDok) ? +hariDok : 30});
 
   const legal = t('legal').map((l) => {
     const sisa_hari = l.berlaku_sd ? hari(l.berlaku_sd, today) : null;
@@ -153,7 +152,7 @@ export function ringkasan(d) {
     piutang: jumlah(d.kontrak, 'piutang'), belum_ditagih: jumlah(d.kontrak, 'belum_ditagih'), umur,
     hutang_vendor: d.vendor.reduce((s, v) => s + Math.max(0, v.hutang), 0), retensi: jumlah(d.vendor, 'retensi_ditahan'),
     hutang_supplier: d.pembelian.reduce((s, b) => s + (b.cara_bayar === 'tempo' ? Math.max(0, b.sisa) : 0), 0), hutang_lain: jumlah(d.hutang_lain, 'sisa'),
-    gaji_bulanan: jumlah(d.sdm.filter((s) => s.aktif !== 'Keluar'), 'gaji_total'), nilai_buku_aset: jumlah(d.aset, 'nilai_buku'),
+    gaji_bulanan: jumlah(d.sdm.filter((s) => s.aktif !== 'Keluar'), 'gaji_total'), nilai_buku_aset: jumlah(d.aset, 'buku'),
     proyek_total: d.proyek.length, proyek_berjalan: berjalan.length,
     proyek_tertunda: d.proyek.filter((p) => /^Tertunda/.test(p.status || '')).length,
     proyek_selesai: d.proyek.filter((p) => p.status === 'Selesai').length,
@@ -183,8 +182,9 @@ export function temuan(d, fmtTanggal = (x) => x) {
     butir('SDM', 'Kontrak PKWT terbaru belum ada file PDF', d.sdm.filter((s) => s.aktif === 'Aktif' && s.status === STATUS.pkwt && s.kontrak_list.length && !s.kontrak_list.at(-1).file), (s) => s.nama),
     butir('SDM', 'Pegawai tetap belum ada dokumen kerja (perjanjian kerja / SK)', d.sdm.filter((s) => s.aktif === 'Aktif' && s.status === STATUS.tetap && !s.dokumen_list.some((x) => x.file)), (s) => s.nama),
     butir('SDM', 'Belum ada No. BPJS Ketenagakerjaan', d.sdm.filter((s) => s.aktif === 'Aktif' && s.status !== STATUS.magang && !s.bpjs_tk_no && s.bpjs_tk !== 'Ya'), (s) => s.nama),
-    butir('Aset', 'Lisensi atau pajak aset habis atau berakhir dalam 60 hari', d.aset.filter((a) => a.alert), (a) => a.nama + ' (s.d. ' + fmtTanggal(a.lisensi_sd) + ')'),
-    butir('Aset', 'Aset tidak dalam kondisi baik', d.aset.filter((a) => a.kondisi && a.kondisi !== 'Baik'), (a) => a.nama + ' (' + a.kondisi + ')'),
+    butir('Aset', 'Dokumen aset (pajak, STNK, lisensi, garansi, asuransi) habis atau segera habis', d.aset.filter((a) => a.peringatan.some((p) => p.dokumen)),
+      (a) => a.kode + ' ' + a.nama + ' (' + a.peringatan.filter((p) => p.dokumen).map((p) => p.dokumen.jenis + ' s.d. ' + fmtTanggal(p.tanggal)).join(', ') + ')'),
+    butir('Aset', 'Aset aktif tidak dalam kondisi baik', d.aset.filter((a) => a.status === 'Aktif' && a.kondisi !== 'Baik'), (a) => a.kode + ' ' + a.nama + ' (' + a.kondisi + ')'),
     butir('Legal', 'Dokumen legal belum ada atau perlu dicek', d.legal.filter((l) => l.status === 'BELUM ADA / CEK'), (l) => l.dokumen),
     butir('Legal', 'Dokumen legal habis atau berakhir dalam 90 hari', d.legal.filter((l) => l.status === 'HABIS' || l.status === '≤90 hari'), (l) => l.dokumen),
   ].filter((b) => b.jumlah > 0);

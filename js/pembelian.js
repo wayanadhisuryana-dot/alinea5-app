@@ -144,6 +144,11 @@ export function bukaFormPembelian(lama, awal = {}) {
   let kreditDiubah = !!lama;
   kreditInp.addEventListener('change', () => { kreditDiubah = true; });
   const file = pilihBukti('pb-file', lama?.file, {label: 'Foto / PDF nota'});
+  // Tahap 5: barang modal di bawah batas kapitalisasi (untuk Laporan Pajak aset), hanya stok kantor.
+  const asetSiap = K().aset_siap !== false;
+  const modal = centang('pb-modal', x.barang_modal, 'Barang modal di bawah batas kapitalisasi');
+  const modalInp = modal.querySelector('input');
+  const mModal = h('div', {class: 'medan medan-lebar'}, modal, h('span', {class: 'kecil redup'}, 'Centang bila barang ini sebenarnya barang modal (alat, perabot) yang nilainya di bawah batas kapitalisasi, jadi dibebankan. Masuk Laporan Pajak → (c).'));
   const catatan = h('textarea', {id: 'pb-catatan', rows: '2'}, x.catatan ?? '');
 
   // Baris barang
@@ -194,10 +199,12 @@ export function bukaFormPembelian(lama, awal = {}) {
   const totalEl = h('b');
   const nilaiP = () => ({tanggal: tglEl.value, supplier_id: supId.value, no_nota: nota.value.trim(), tujuan: tujuan.value, proyek_kode: tujuan.value === 'proyek' ? proyekId.value : null,
     sumber_dana: sumber.value, cara_bayar: cara.value, rekening_id: cara.value === 'tunai' ? rek.value || null : null, jatuh_tempo: cara.value === 'tempo' ? jt.value || null : null,
-    ppn: ppn.nilai() || 0, ongkir: ongkir.nilai() || 0, ppn_kredit: kreditInp.checked && sumber.value === 'perusahaan' && (ppn.nilai() || 0) > 0, catatan: catatan.value.trim() || null});
+    ppn: ppn.nilai() || 0, ongkir: ongkir.nilai() || 0, ppn_kredit: kreditInp.checked && sumber.value === 'perusahaan' && (ppn.nilai() || 0) > 0, catatan: catatan.value.trim() || null,
+    ...(asetSiap ? {barang_modal: tujuan.value === 'stok' && modalInp.checked} : {})});
   const segar = () => {
     const sup = supplierDari(supId.value);
     mProyek.hidden = tujuan.value !== 'proyek';
+    mModal.hidden = !asetSiap || tujuan.value !== 'stok';
     sumber.querySelector('option[value=titipan]').disabled = tujuan.value === 'stok';
     if (tujuan.value === 'stok' && sumber.value === 'titipan') sumber.value = 'perusahaan';
     mRek.hidden = cara.value !== 'tunai'; mJt.hidden = cara.value !== 'tempo';
@@ -266,7 +273,7 @@ export function bukaFormPembelian(lama, awal = {}) {
     h('div', {class: 'form-grid'},
       medan('PPN', h('div', {class: 'baris-tombol'}, ppn.el, hitungPpn), {id: 'pb-ppn'}), medan('Ongkir', ongkir.el, {id: 'pb-ongkir'}),
       h('div', {class: 'medan medan-lebar'}, ppnKredit, h('span', {class: 'kecil redup'}, 'Bawaan: dicentang bila perusahaan PKP pada tanggal nota dan supplier PKP. Bisa diubah.')),
-      file.el, medan('Catatan', catatan, {lebar: true})),
+      mModal, file.el, medan('Catatan', catatan, {lebar: true})),
     ringkas, galat,
     kaki(lama && boleh && !lama.pembayaran.length && tombolHapus(async () => { await store.keu.hapusPembelian(lama.id); dlg.close(); location.hash = '#pembelian'; await segarkan(); pesan('Pembelian dihapus beserta jurnal dan riwayat harganya.'); }),
       h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, boleh ? 'Batal' : 'Tutup'), boleh && simpan));

@@ -23,7 +23,7 @@ export const MENU = [
   {k: 'jurnal', label: 'Jurnal', grup: 'Keuangan', ke: 'jurnal'},
   {k: 'laporan', label: 'Laporan', grup: 'Keuangan', ke: 'segera-laporan', segera: true},
   {k: 'sdm', label: 'SDM', grup: 'Administrasi', ke: 't-sdm', tabel: 'sdm'},
-  {k: 'aset', label: 'Aset', grup: 'Administrasi', ke: 't-aset', tabel: 'aset', modul: 'aset'},
+  {k: 'aset', label: 'Aset', grup: 'Administrasi', ke: 'aset', modul: 'aset'},
   {k: 'legal', label: 'Legal & Izin', grup: 'Administrasi', ke: 't-legal', tabel: 'legal', modul: 'legal'},
   {k: 'pengaturan', label: 'Pengaturan', grup: 'Lainnya', ke: 'pengaturan'},
 ];
