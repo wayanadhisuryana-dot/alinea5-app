@@ -13,6 +13,12 @@ create table if not exists arsip_tahap3.termin as select * from public.termin wh
 create table if not exists arsip_tahap3.penerimaan as select * from public.penerimaan where false;
 create table if not exists arsip_tahap3.jurnal as select * from public.jurnal where false;
 create table if not exists arsip_tahap3.jurnal_baris as select * from public.jurnal_baris where false;
+do $$ declare t text; begin
+  foreach t in array array['kontrak_klien', 'kontrak_addendum', 'termin', 'penerimaan', 'jurnal', 'jurnal_baris'] loop
+    execute format('alter table arsip_tahap3.%I enable row level security', t);
+  end loop;
+end $$;
+revoke all on schema arsip_tahap3 from anon, authenticated;
 insert into arsip_tahap3.kontrak_klien select * from public.kontrak_klien x where not exists (select 1 from arsip_tahap3.kontrak_klien a where a.id = x.id);
 insert into arsip_tahap3.kontrak_addendum select * from public.kontrak_addendum x where not exists (select 1 from arsip_tahap3.kontrak_addendum a where a.id = x.id);
 insert into arsip_tahap3.termin select * from public.termin x where not exists (select 1 from arsip_tahap3.termin a where a.id = x.id);

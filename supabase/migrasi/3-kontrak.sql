@@ -10,6 +10,9 @@
 -- =====================================================================
 create schema if not exists arsip_tahap3;
 create table if not exists arsip_tahap3.records as select * from public.records where false;
+-- Arsip hanya untuk pemulihan lewat SQL Editor: dikunci dari aplikasi (RLS tanpa policy).
+alter table arsip_tahap3.records enable row level security;
+revoke all on schema arsip_tahap3 from anon, authenticated;
 insert into arsip_tahap3.records
   select * from public.records r
   where r.tabel in ('kontrak', 'termin') and not exists (select 1 from arsip_tahap3.records a where a.id = r.id);
