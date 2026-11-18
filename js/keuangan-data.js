@@ -1190,6 +1190,9 @@ export function cadanganDari(K) {
   };
 }
 
+// Tabel / fungsi database belum dibuat (migrasi belum dijalankan). Pesan bisa sudah diterjemahkan oleh terjemah().
+const belumAda = (e) => /does not exist|schema cache|Could not find|Database belum diperbarui/i.test(e?.message || '');
+
 // ---------- mesin Supabase ----------
 export function mesinSupabase(sb) {
   const cek = ({data, error}) => { if (error) throw new Error(terjemah(error.message)); return data; };
@@ -1217,7 +1220,7 @@ export function mesinSupabase(sb) {
           const [kontrak_klien, kontrak_addendum, termin, penerimaan] = await Promise.all([semua('kontrak_klien', 'tanggal'), semua('kontrak_addendum', 'tanggal'), semua('termin', 'ke'), semua('penerimaan', 'dibuat')]);
           kontrak = {kontrak_siap: true, kontrak_klien, kontrak_addendum, termin, penerimaan};
         } catch (e) {
-          if (!/does not exist|schema cache|Could not find/i.test(e.message)) throw e;
+          if (!belumAda(e)) throw e;
         }
         // Tahap 4: pihak proyek, pembelian, pinjaman antar proyek.
         let proyekKeu = {proyek_siap: false, ...Object.fromEntries(TABEL_PROYEK.map((t) => [t, []]))};
@@ -1225,12 +1228,12 @@ export function mesinSupabase(sb) {
           const isi = await Promise.all(TABEL_PROYEK.map((t) => semua(t, ['kontrak_vendor_item', 'pembelian_baris'].includes(t) ? 'urut' : t === 'kontrak_vendor_termin' ? 'ke' : 'dibuat')));
           proyekKeu = {proyek_siap: true, ...Object.fromEntries(TABEL_PROYEK.map((t, i) => [t, isi[i]]))};
         } catch (e) {
-          if (!/does not exist|schema cache|Could not find/i.test(e.message)) throw e;
+          if (!belumAda(e)) throw e;
         }
         return {siap: true, akun, rekening, kas_transaksi, transfer, jurnal, jurnal_baris, pemetaan_jurnal, tutup_buku, tutup_buku_riwayat,
           akuntansi: {...AKUNTANSI_BAWAAN, ...akuntansi[0]}, perusahaan: perusahaan[0] || {data: {}}, peran, ...kontrak, ...proyekKeu};
       } catch (e) {
-        if (/does not exist|schema cache|Could not find/i.test(e.message)) return {...kosongKeuangan(), siap: false};
+        if (belumAda(e)) return {...kosongKeuangan(), siap: false};
         throw e;
       }
     },
