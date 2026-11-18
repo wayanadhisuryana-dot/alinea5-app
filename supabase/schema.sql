@@ -58,7 +58,8 @@ create index if not exists records_tabel_idx on public.records (tabel);
 alter table public.records drop constraint if exists records_tabel_check;
 alter table public.records add constraint records_tabel_check check (tabel in (
   'proyek', 'tahap', 'masalah', 'klien', 'tim',
-  'kontrak', 'termin', 'vendor', 'hutang_lain', 'sdm', 'aset', 'legal', 'pengaturan'));
+  'kontrak', 'termin', 'vendor', 'hutang_lain', 'sdm', 'aset', 'legal', 'pengaturan',
+  'vendor_tukang', 'supplier', 'barang', 'harga'));
 
 create or replace function public.catat_perubahan()
 returns trigger language plpgsql set search_path = ''
