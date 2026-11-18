@@ -916,6 +916,27 @@ end $$;
 -- =====================================================================
 -- 11. TUTUP BUKU DAN AUDIT
 -- =====================================================================
+-- Perbaikan pengaman tutup buku (Tahap 1): pengecualian khusus rekening dulu membaca new.saldo_awal langsung,
+-- yang gagal ("record new has no field saldo_awal") saat baris tabel lain diubah. Sekarang dibaca lewat jsonb.
+create or replace function public.jaga_tutup_buku()
+returns trigger language plpgsql security definer set search_path = ''
+as $$
+declare
+  kolom text := tg_argv[0];
+  d_lama date; d_baru date;
+  jb jsonb; jl jsonb;
+begin
+  if tg_op <> 'INSERT' then jl := to_jsonb(old); d_lama := (jl ->> kolom)::date; end if;
+  if tg_op <> 'DELETE' then jb := to_jsonb(new); d_baru := (jb ->> kolom)::date; end if;
+  if tg_op = 'UPDATE' and tg_table_name = 'rekening'
+     and jb -> 'saldo_awal' = jl -> 'saldo_awal' and jb -> 'tgl_saldo_awal' = jl -> 'tgl_saldo_awal' then
+    return new; -- perubahan nama/keterangan rekening tidak menyentuh pembukuan
+  end if;
+  perform public.cek_bulan_terbuka(d_lama);
+  perform public.cek_bulan_terbuka(d_baru);
+  return case when tg_op = 'DELETE' then old else new end;
+end $$;
+
 do $$
 declare t text;
 begin
