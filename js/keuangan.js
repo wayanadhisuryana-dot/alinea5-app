@@ -299,6 +299,8 @@ export function bukaSumber(sumber, sumberId, jurnalId) {
   if (sumber === 'invoice' && K().termin?.some((x) => x.id === sumberId)) { location.hash = '#piutang-' + sumberId; return; }
   if ((sumber === 'aset' || sumber === 'pelepasan_aset') && K().aset?.some((x) => x.id === sumberId)) { location.hash = '#aset-' + sumberId; return; }
   if (sumber === 'servis_aset') { const s = K().aset_servis?.find((x) => x.id === sumberId); if (s) { S.tabAset = 'servis'; location.hash = '#aset-' + s.aset_id; return; } }
+  if (sumber === 'hutang' && K().hutang?.some((x) => x.id === sumberId)) { S.tabHutang = 'info'; location.hash = '#hutang-' + sumberId; return; }
+  if (sumber === 'bayar_hutang') { const b = K().hutang_bayar?.find((x) => x.id === sumberId); if (b) { S.tabHutang = 'bayar'; location.hash = '#hutang-' + b.hutang_id; return; } }
   const j = daftarJurnal(K()).find((x) => x.id === jurnalId);
   if (j) bukaFormJurnal(j);
 }

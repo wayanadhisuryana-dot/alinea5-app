@@ -4,6 +4,7 @@ import {normNama, kontakDari} from './klien-util.js';
 import {ringkasPiutang, ringkasUmur} from './kontrak-util.js';
 import {ringkasVendor, ringkasPembelian, ringkasPinjaman, dompetProyek} from './proyek-util.js';
 import {ringkasAset} from './aset-util.js';
+import {ringkasSemuaHutang} from './hutang-util.js';
 import {aturSdm, cariJabatan, kontrakDari, dokumenDari, gajiSaatIni, gajiDari, totalGaji, peringatanPegawai, masaKerja, bawaanTimProyek, refSdm, STATUS, STATUS_PENDEK} from './sdm-util.js';
 
 export const n = (v) => (v == null || v === '' || isNaN(+v) ? 0 : +v);
@@ -80,11 +81,11 @@ export function hitung(db, today = hariIni(), atur = {}, keu = {}) {
   const ctxDompet = {kontrakKlien: piutang.kontrak, vendor, pembelian, pinjaman};
   const dompet = Object.fromEntries(proyek.map((p) => [p.kode, dompetProyek(keu, p.kode, ctxDompet)]));
 
-  const hutang_lain = t('hutang_lain').map((h) => {
-    const sisa = n(h.total) - n(h.dibayar);
-    const alert = !h.jatuh_tempo || sisa <= 0 ? '' : h.jatuh_tempo < today ? 'LEWAT' : hari(h.jatuh_tempo, today) <= 14 ? '≤14 hari' : '';
-    return {...h, sisa, alert};
-  });
+  // Tahap 6: hutang lain dari tabel hutang (kreditur, jadwal angsuran, pembayaran).
+  const hariHutang = atur?.notifikasi?.hutang_lain?.hari;
+  const hariNotif = hariHutang != null && hariHutang !== '' && Number.isFinite(+hariHutang) ? +hariHutang : 14;
+  const hutang_lain = ringkasSemuaHutang(keu, today, {hariNotif}).map((x) => ({...x, kreditur: x.kreditur_nama, sisa: x.sisa_pokok, jatuh_tempo: x.berikut?.tanggal || null,
+    alert: x.status === 'Terlambat' ? 'LEWAT' : x.peringatan.some((p) => p.jenis === 'segera') ? '≤' + hariNotif + ' hari' : ''}));
 
   const {jabatan, param, skk: modulSkk} = aturSdm(atur);
   const sdm = t('sdm').map((s) => {

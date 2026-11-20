@@ -20,12 +20,13 @@ import {renderDetailProyek} from './detail-proyek.js';
 import {ringkasTitipanDipinjamkan} from './dompet.js';
 import {bacaKeuangan} from './proyek-bersama.js';
 import {renderAset, renderDetailAset, renderLaporanPajak, bukukanOtomatis} from './aset.js';
+import {renderHutang, renderDetailHutang} from './hutang.js';
 
 const akar = document.getElementById('app');
 
 // ---------- rute ----------
 const rute = () => (location.hash.replace(/^#/, '') || 'dashboard');
-const jumlahMenu = (m) => (m.tabel && S.db[m.tabel] ? S.db[m.tabel].filter((x) => x.aktif !== false && (m.tabel !== 'barang' || (x.jenis || 'barang') === 'barang')).length : m.k === 'kas' ? S.keu.rekening.filter((r) => r.aktif).length || null : m.k === 'kontrak' ? S.keu.kontrak_klien?.length || null : m.k === 'pihak_proyek' ? S.keu.kontrak_vendor?.length || null : m.k === 'pembelian' ? S.keu.pembelian?.length || null : m.k === 'aset' ? S.d?.aset?.filter((a) => a.status === 'Aktif').length || null : null);
+const jumlahMenu = (m) => (m.tabel && S.db[m.tabel] ? S.db[m.tabel].filter((x) => x.aktif !== false && (m.tabel !== 'barang' || (x.jenis || 'barang') === 'barang')).length : m.k === 'kas' ? S.keu.rekening.filter((r) => r.aktif).length || null : m.k === 'kontrak' ? S.keu.kontrak_klien?.length || null : m.k === 'pihak_proyek' ? S.keu.kontrak_vendor?.length || null : m.k === 'pembelian' ? S.keu.pembelian?.length || null : m.k === 'aset' ? S.d?.aset?.filter((a) => a.status === 'Aktif').length || null : m.k === 'hutang_lain' ? S.d?.hutang_lain?.filter((x) => x.status !== 'Lunas').length || null : null);
 // Rute -> kunci menu yang disorot.
 function menuAktif(r) {
   if (r.startsWith('sdm-')) return 'sdm';
@@ -35,6 +36,7 @@ function menuAktif(r) {
   if (r.startsWith('pihak-proyek')) return 'pihak_proyek';
   if (r.startsWith('pembelian')) return 'pembelian';
   if (r.startsWith('aset')) return 'aset';
+  if (r.startsWith('hutang')) return 'hutang_lain';
   if (r.startsWith('proyek-')) return 'proyek';
   if (r.startsWith('piutang')) return 'termin';
   if (r.startsWith('barang')) return 'barang';
@@ -91,6 +93,9 @@ function render() {
   else if (r === 'aset-pajak' && hak('aset') && modulAktif('aset')) renderLaporanPajak(utama);
   else if (r.startsWith('aset-') && hak('aset') && modulAktif('aset')) renderDetailAset(utama, r.slice(5));
   else if (r === 't-aset') { history.replaceState(null, '', '#aset'); return render(); }
+  else if (r === 'hutang' && hak('hutang_lain') && modulAktif('hutang_lain')) renderHutang(utama);
+  else if (r.startsWith('hutang-') && hak('hutang_lain') && modulAktif('hutang_lain')) renderDetailHutang(utama, r.slice(7));
+  else if (r === 't-hutang_lain') { history.replaceState(null, '', '#hutang'); return render(); }
   else if (r.startsWith('proyek-') && bolehAkses('proyek')) renderDetailProyek(utama, r.slice(7), {bukaForm});
   else if (r === 't-vendor' || r === 'segera-pembelian') { history.replaceState(null, '', r === 't-vendor' ? '#pihak-proyek' : '#pembelian'); return render(); }
   else if (r.startsWith('kontrak-') && (hak('kontrak') || hak('termin'))) renderDetailKontrak(utama, r.slice(8));
@@ -245,11 +250,13 @@ function renderDashboard(el) {
       h('div', {class: 'ubin-grid'},
         ubin('Hutang ke vendor / tukang', rpRingkas(r.hutang_vendor), 'retensi ditahan ' + rpRingkas(r.retensi)),
         ubin('Hutang supplier', rpRingkas(r.hutang_supplier || 0), 'pembelian tempo belum lunas'),
-        ubin('Kewajiban lain', rpRingkas(r.hutang_lain), 'sisa di luar vendor proyek'),
+        ubin('Hutang lain (sisa pokok)', rpRingkas(r.hutang_lain), 'bank, leasing, pemilik, pihak lain'),
         ubin('Gaji + tunjangan', rpRingkas(r.gaji_bulanan), 'per bulan'),
         ubin('Nilai buku aset', rpRingkas(r.nilai_buku_aset), 'per hari ini, komersial')),
-      tabelSederhana([['Kreditur'], ['Uraian'], ['Sisa', 1], ['Jatuh tempo berikut'], ['Peringatan']],
-        d.hutang_lain.slice().sort((a, b) => String(a.jatuh_tempo).localeCompare(String(b.jatuh_tempo))).map((x) => [isi(x.kreditur), isi(x.uraian), rp(x.sisa), tgl(x.jatuh_tempo), x.alert ? pill(x.alert) : 'Tidak ada']), 'Tidak ada kewajiban lain.')));
+      tabelSederhana([['Kreditur'], ['Uraian'], ['Sisa pokok', 1], ['Angsuran berikutnya'], ['Peringatan']],
+        d.hutang_lain.filter((x) => x.sisa > 0).sort((a, b) => String(a.jatuh_tempo || '9999').localeCompare(String(b.jatuh_tempo || '9999')))
+          .map((x) => [h('a', {href: '#hutang-' + x.id}, isi(x.kreditur)), isi(x.uraian), rp(x.sisa), x.berikut ? tgl(x.berikut.tanggal) + ' · ' + rp(x.berikut.kurang) : '—', x.alert ? pill(x.alert) : 'Tidak ada']),
+        'Tidak ada hutang lain.')));
   }
 
   const tm = temuan(d, tgl);

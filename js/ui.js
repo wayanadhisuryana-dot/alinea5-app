@@ -43,8 +43,8 @@ export const kosong = (v) => v == null || v === '';
 export const isi = (v) => (kosong(v) ? '—' : String(v));
 
 export const BURUK = ['Terlambat', 'Lewat tempo', 'Lewat jatuh tempo', 'Sebagian - lewat tempo', 'LEWAT', 'Tinggi', 'HABIS', 'Tidak', 'Rusak', 'Hilang', 'Batal', 'BELUM ADA / CEK'];
-export const WASPADA = ['Terlambat ringan', 'Tertunda - klien', 'Tertunda - internal', 'Sedang', 'Sebagian', 'Menunggu bayar', 'Dana titipan klien', 'Perlu servis', 'Data belum lengkap', 'Terbuka', 'Belum ditagih', 'Ditagih', 'Dibayar sebagian'];
-export const BAIK = ['Sesuai jadwal', 'Selesai', 'Lunas', 'Aktif', 'Berjalan', 'Rendah', 'Ya', 'Baik'];
+export const WASPADA = ['Terlambat ringan', 'Tertunda - klien', 'Tertunda - internal', 'Sedang', 'Sebagian', 'Menunggu bayar', 'Dana titipan klien', 'Perlu servis', 'Data belum lengkap', 'Terbuka', 'Belum ditagih', 'Ditagih', 'Dibayar sebagian', 'Jatuh tempo hari ini'];
+export const BAIK = ['Sesuai jadwal', 'Selesai', 'Lunas', 'Lancar', 'Aktif', 'Berjalan', 'Rendah', 'Ya', 'Baik'];
 export const pill = (v) => {
   if (kosong(v)) return '—';
   const t = String(v);

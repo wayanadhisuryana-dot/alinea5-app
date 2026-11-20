@@ -10,6 +10,7 @@ import {hitungTermin, isiRetensi, periksaKontrak, nomorInvoice, periksaFormatInv
   FORMAT_INVOICE_BAWAAN, JATUH_TEMPO_BAWAAN, TARIF_PPN_BAWAAN} from './kontrak-util.js';
 import {periksaKontrakVendor, nilaiOpname, retensiDari, periksaPembelian, hitungPembelian, subtotalBaris, kali, volumeSah, ringkasPinjaman} from './proyek-util.js';
 import {faktorSatuan} from './master-util.js';
+import {JENIS_HUTANG, METODE_BUNGA, CARA_HUTANG, akunHutang, buatJadwal, targetJadwal, periksaJadwal, sisaPokok} from './hutang-util.js';
 import {akumulasiSampai, perolehanPada, idxBulan, bulanKe, akhirBulan, totalBayar, kodeAsetBerikut, prefixSah, KONDISI_ASET, STATUS_ASET, JENIS_DOKUMEN_ASET} from './aset-util.js';
 
 // ---------- data standar (sama dengan migrasi) ----------
@@ -85,18 +86,28 @@ export const PEMETAAN = [
   ['servis_beban', 1, 'Servis aset – biaya biasa', 'D', '6-5', 'Perawatan & Servis'],
   ['servis_aset', 1, 'Servis aset – dikapitalisasi', 'D', 'AKUN_ASET', 'Menambah nilai aset (akun aset kategori)'],
   ['servis_kas', 1, 'Servis aset – uang keluar', 'K', 'REKENING', 'Rekening pembayar'],
+  // Tahap 6: hutang lain. AKUN_HUTANG: 2-8 bank & leasing, 2-9 pemilik / pihak afiliasi, 2-10 lainnya.
+  ['hutang_terima', 1, 'Pinjaman diterima – uang masuk', 'D', 'REKENING', 'Rekening penerima dana'],
+  ['hutang_pokok', 1, 'Pinjaman diterima / saldo awal – hutang', 'K', 'AKUN_HUTANG', 'Akun hutang sesuai jenis (2-8 / 2-9 / 2-10)'],
+  ['hutang_saldo_ekuitas', 1, 'Saldo awal hutang – ekuitas', 'D', '3-2-01', 'Ekuitas saldo awal (sisa pokok pinjaman lama)'],
+  ['bayar_hutang_pokok', 1, 'Angsuran hutang – pokok', 'D', 'AKUN_HUTANG', 'Mengurangi hutang'],
+  ['bayar_hutang_bunga', 1, 'Angsuran hutang – bunga', 'D', '7-1', 'Beban Bunga'],
+  ['bayar_hutang_denda', 1, 'Angsuran hutang – denda', 'D', '7-3', 'Denda'],
+  ['bayar_hutang_kas', 1, 'Angsuran hutang – uang keluar', 'K', 'REKENING', 'Rekening pembayar'],
 ].map(([jenis, urut, nama, sisi, akun, keterangan]) => ({jenis, urut, nama, sisi, akun, keterangan}));
 export const ISI_PEMETAAN = {
   REKENING: 'Rekening yang dipilih', AKUN_DIPILIH: 'Akun yang dipilih di transaksi',
   REKENING_ASAL: 'Rekening asal', REKENING_TUJUAN: 'Rekening tujuan', AKUN_PENDAPATAN: 'Akun pendapatan di kontrak (4-1 / 4-2)',
   AKUN_ASET: 'Akun aset kategori', AKUN_AKUMULASI: 'Akun akumulasi kategori', AKUN_BEBAN: 'Akun beban penyusutan kategori',
+  AKUN_HUTANG: 'Akun hutang sesuai jenis (2-8 / 2-9 / 2-10)',
 };
 export const GOLONGAN = {1: 'Aset', 2: 'Kewajiban', 3: 'Ekuitas', 4: 'Pendapatan', 5: 'Beban proyek', 6: 'Beban operasional', 7: 'Beban lain-lain'};
 export const saldoNormal = (gol) => (gol === 1 || gol >= 5 ? 'D' : 'K');
 export const JENIS_REKENING = ['Giro', 'Tabungan', 'Deposito', 'Kas tunai'];
 export const SUMBER_JURNAL = {manual: 'Jurnal manual', saldo_awal: 'Saldo awal', kas: 'Kas umum', transfer: 'Transfer', penerimaan: 'Penerimaan termin', invoice: 'Invoice',
   opname: 'Opname vendor', bayar_vendor: 'Pembayaran vendor', pembelian: 'Pembelian material', bayar_supplier: 'Pembayaran supplier',
-  aset: 'Perolehan aset', pelepasan_aset: 'Pelepasan aset', servis_aset: 'Servis aset', penyusutan: 'Penyusutan'};
+  aset: 'Perolehan aset', pelepasan_aset: 'Pelepasan aset', servis_aset: 'Servis aset', penyusutan: 'Penyusutan',
+  hutang: 'Hutang lain', bayar_hutang: 'Pembayaran hutang'};
 export const AKUNTANSI_BAWAAN = {basis: 'kas', bulan_awal_buku: 1, batas_kapitalisasi: 10000000, tarif_ppn_bp: TARIF_PPN_BAWAAN, format_invoice: FORMAT_INVOICE_BAWAAN, jatuh_tempo_hari: JATUH_TEMPO_BAWAAN,
   batas_pinjam_titipan_persen: null, metode_fiskal: 'garis_lurus'};
 // Kolom kontrak yang diisi dari formulir (sisanya diisi sistem).
@@ -110,9 +121,13 @@ export const TABEL_PROYEK = ['kontrak_vendor', 'kontrak_vendor_item', 'kontrak_v
 export const KOLOM_KONTRAK_VENDOR = ['proyek_kode', 'vendor_id', 'lingkup', 'no_spk', 'tanggal', 'file', 'sumber_dana', 'skema', 'nilai', 'upah_harian', 'perkiraan_hari',
   'retensi_bp', 'masa_retensi_hari', 'tgl_selesai', 'catatan'];
 // Tahap 5. Aset.
+// Tahap 6. Hutang lain.
+export const TABEL_HUTANG = ['kreditur', 'hutang', 'hutang_angsuran', 'hutang_bayar'];
+export const KOLOM_HUTANG = ['kreditur_id', 'jenis', 'uraian', 'no_perjanjian', 'tgl_perjanjian', 'file', 'pokok', 'bunga_bp', 'metode_bunga', 'tenor_bulan', 'tgl_mulai',
+  'hari_angsuran', 'denda_ket', 'cara', 'rekening_id', 'aset_id', 'tgl_saldo_awal', 'sisa_pokok_awal', 'jaminan', 'jaminan_aset_id', 'catatan'];
 export const TABEL_ASET = ['kelompok_fiskal', 'aset_kategori', 'aset_lokasi', 'aset', 'aset_mutasi', 'aset_servis', 'aset_dokumen', 'penyusutan_bulan', 'penyusutan_aset'];
 export const KOLOM_ASET = ['nama', 'kategori_id', 'no_seri', 'supplier_id', 'faktur', 'foto', 'tgl_perolehan', 'harga', 'ppn', 'ppn_kredit', 'biaya_tambahan', 'diskon',
-  'tetap_aset', 'cara', 'rekening_id', 'tgl_saldo_awal', 'tgl_mulai', 'umur_bulan', 'residu', 'kelompok_id', 'bulan_fiskal', 'pemegang_id', 'lokasi_id', 'tgl_mutasi', 'catatan_mutasi',
+  'tetap_aset', 'cara', 'uang_muka', 'rekening_id', 'tgl_saldo_awal', 'tgl_mulai', 'umur_bulan', 'residu', 'kelompok_id', 'bulan_fiskal', 'pemegang_id', 'lokasi_id', 'tgl_mutasi', 'catatan_mutasi',
   'kondisi', 'status', 'tgl_pelepasan', 'nilai_jual', 'ppn_jual', 'rekening_jual_id', 'alasan_pelepasan', 'catatan'];
 export const KELOMPOK_FISKAL_AWAL = [['Kelompok 1', 4, 2500, 5000], ['Kelompok 2', 8, 1250, 2500], ['Kelompok 3', 16, 625, 1250], ['Kelompok 4', 20, 500, 1000],
   ['Bangunan permanen', 20, 500, null], ['Bangunan tidak permanen', 10, 1000, null]];
@@ -190,6 +205,7 @@ function keadaanAwal() {
     peran: [], notifikasi_status: [], seq: {jurnal: 0, baris: 0, audit: 0, riwayat: 0},
     kontrak_klien: [], kontrak_addendum: [], termin: [], penerimaan: [],
     ...Object.fromEntries(TABEL_PROYEK.map((t) => [t, []])), ...Object.fromEntries(TABEL_ASET.map((t) => [t, []])),
+    ...Object.fromEntries(TABEL_HUTANG.map((t) => [t, []])),
   };
   const id = {};
   for (const [kode, nama] of AKUN_STANDAR) {
@@ -222,7 +238,7 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
   try { K = JSON.parse(localStorage.getItem(KUNCI)); } catch { K = null; }
   if (!K?.akun?.length) K = keadaanAwal();
   // Data demo dari sebelum Tahap 3.
-  for (const t of [...TABEL_KONTRAK, ...TABEL_PROYEK, ...TABEL_ASET]) K[t] ||= [];
+  for (const t of [...TABEL_KONTRAK, ...TABEL_PROYEK, ...TABEL_ASET, ...TABEL_HUTANG]) K[t] ||= [];
   isiAwalAset(K);
   K.akuntansi = {...AKUNTANSI_BAWAAN, ...K.akuntansi};
   for (const m of PEMETAAN) if (!K.pemetaan_jurnal.some((x) => x.jenis === m.jenis && x.urut === m.urut)) K.pemetaan_jurnal.push({...m});
@@ -810,7 +826,8 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
         {AKUN_ASET: k.akun_aset_id, AKUN_AKUMULASI: k.akun_akumulasi_id});
     }
     jurnalOtomatis(s, 'aset', a.id, a.tgl_perolehan, 'Perolehan aset ' + a.kode + ' ' + a.nama,
-      [{jenis: 'aset_perolehan', jumlah: a.nilai_perolehan}, {jenis: 'aset_ppn', jumlah: a.ppn_kredit ? a.ppn : 0}, {jenis: a.cara === 'tunai' ? 'aset_kas' : 'aset_hutang', jumlah: totalBayar(a)}],
+      [{jenis: 'aset_perolehan', jumlah: a.nilai_perolehan}, {jenis: 'aset_ppn', jumlah: a.ppn_kredit ? a.ppn : 0}, {jenis: 'aset_kas', jumlah: a.cara === 'tunai' ? totalBayar(a) : a.uang_muka || 0},
+        {jenis: 'aset_hutang', jumlah: a.cara === 'tunai' ? 0 : totalBayar(a) - (a.uang_muka || 0)}],
       {AKUN_ASET: katDari(s, a.kategori_id).akun_aset_id, REKENING: rekAkun(s, a.rekening_id)});
   };
   const jurnalPelepasan = (s, id) => {
@@ -842,7 +859,7 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
     jurnalOtomatis(s, 'penyusutan', b.id, akhirBulan(idxBulan(b.bulan)), 'Penyusutan & amortisasi ' + namaBulan(b.bulan),
       [...grup.values()].flatMap((g) => [{jenis: 'susut_beban', jumlah: g.jml, isi: {AKUN_BEBAN: g.beban}}, {jenis: 'susut_akumulasi', jumlah: g.jml, isi: {AKUN_AKUMULASI: g.akum}}]), {});
   };
-  const BELI = ['tgl_perolehan', 'harga', 'ppn', 'ppn_kredit', 'biaya_tambahan', 'diskon', 'cara', 'rekening_id', 'kategori_id', 'tgl_saldo_awal'];
+  const BELI = ['tgl_perolehan', 'harga', 'ppn', 'ppn_kredit', 'biaya_tambahan', 'diskon', 'cara', 'uang_muka', 'rekening_id', 'kategori_id', 'tgl_saldo_awal'];
   const sama = (a, b, kolom) => kolom.every((c) => (a[c] ?? null) === (b[c] ?? null));
   const simpanAsetDi = (s, id, d) => {
     const lama = id ? asetDari(s, id) : null;
@@ -875,6 +892,17 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
       if (lama && servisAset(s, id).some((x) => x.tanggal < saldo)) throw new Error('Ada servis sebelum tanggal saldo awal. Hapus atau ubah servis itu dulu.');
     }
     if (d.cara === 'tunai' && !rekeningBoleh(s, d.rekening_id, lama?.rekening_id)) throw new Error('Rekening pembayar wajib dipilih (rekening aktif).');
+    // Tahap 6: uang muka (DP) kredit / leasing dibayar dari rekening; sisanya hutang 2-8.
+    const dp = ['kredit', 'leasing'].includes(d.cara) ? uangSah(d.uang_muka, 'Uang muka harus rupiah utuh, tidak minus.') : 0;
+    const bayarSemua = harga + bt - diskon + ppn;
+    if (dp > 0 && dp >= bayarSemua) throw new Error('Uang muka harus lebih kecil dari nilai yang dibayar (Rp ' + fmt(bayarSemua) + '). Bila lunas, pilih cara Tunai.');
+    if (dp > 0 && !rekeningBoleh(s, d.rekening_id, lama?.rekening_id)) throw new Error('Rekening pembayar uang muka wajib dipilih (rekening aktif).');
+    if (lama?.hutang_id) {
+      const hu = s.hutang.find((x) => x.id === lama.hutang_id);
+      if (hu && (!['kredit', 'leasing'].includes(d.cara) || bayarSemua - dp !== hu.pokok)) {
+        throw new Error('Aset ini tertaut ke hutang (pokok Rp ' + fmt(hu.pokok) + '). Cara perolehan dan nilai hutang (nilai dibayar − uang muka) harus tetap sama; ubah atau lepaskan tautan di menu Hutang Lain dulu.');
+      }
+    }
     let mulai = null, umur = null, residu = 0;
     if (kat.disusutkan) {
       mulai = d.tgl_mulai || tgl; umur = d.umur_bulan === '' || d.umur_bulan == null ? null : +d.umur_bulan; residu = angka0(d.residu);
@@ -913,8 +941,8 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
       }
       if (lama && servisAset(s, id).some((x) => x.tanggal > lepas)) throw new Error('Ada servis setelah tanggal pelepasan. Hapus atau ubah servis itu dulu.');
     }
-    const isiBeli = {tgl_perolehan: tgl, harga, ppn, ppn_kredit: kredit, biaya_tambahan: bt, diskon, cara: d.cara, rekening_id: d.cara === 'tunai' ? d.rekening_id : null, kategori_id: kat.id,
-      tgl_saldo_awal: saldo};
+    const isiBeli = {tgl_perolehan: tgl, harga, ppn, ppn_kredit: kredit, biaya_tambahan: bt, diskon, cara: d.cara, rekening_id: d.cara === 'tunai' || dp > 0 ? d.rekening_id : null, kategori_id: kat.id,
+      tgl_saldo_awal: saldo, uang_muka: dp};
     const beliBerubah = !lama || !sama(lama, isiBeli, BELI);
     if (lama && lama.status !== 'Aktif' && status !== 'Aktif'
       && (beliBerubah || !sama(lama, {tgl_mulai: mulai, umur_bulan: umur, residu}, ['tgl_mulai', 'umur_bulan', 'residu']))) {
@@ -955,6 +983,7 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
   const hapusAsetDi = (s, id) => {
     const a = asetDari(s, id);
     if (!a) return;
+    if ((a.hutang_id && s.hutang.some((x) => x.id === a.hutang_id)) || s.hutang.some((x) => x.aset_id === id || x.jaminan_aset_id === id)) throw new Error('Aset ini tertaut ke hutang di menu Hutang Lain. Hapus atau ubah hutangnya dulu.');
     if (servisAset(s, id).length) throw new Error('Aset ini punya riwayat servis. Hapus servisnya dulu, atau ubah status aset (dijual / dihapuskan).');
     const bulanPb = new Map(s.penyusutan_bulan.map((b) => [b.id, b.bulan]));
     const pa = s.penyusutan_aset.filter((x) => x.aset_id === id);
@@ -1081,6 +1110,175 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
     unikNama(s, 'aset_lokasi', x, 'lokasi');
     x.nama = x.nama.trim();
     return simpanBaris(s, 'aset_lokasi', lama, x);
+  };
+  // ---------- Tahap 6: hutang lain (aturan sama dengan 6-hutang.sql) ----------
+  const hutangDari = (s, id) => s.hutang.find((x) => x.id === id);
+  const angsuranHutang = (s, hid) => s.hutang_angsuran.filter((x) => x.hutang_id === hid).sort((a, b) => a.ke - b.ke);
+  const bayarHutang = (s, hid) => s.hutang_bayar.filter((x) => x.hutang_id === hid);
+  const simpanKrediturDi = (s, id, d) => {
+    const lama = id ? s.kreditur.find((x) => x.id === id) : null;
+    if (id && !lama) throw new Error('Kreditur tidak ditemukan.');
+    const nama = String(d.nama ?? lama?.nama ?? '').trim();
+    if (!nama) throw new Error('Nama kreditur wajib diisi.');
+    if (s.kreditur.some((x) => x.id !== id && x.nama.trim().toLowerCase() === nama.toLowerCase())) throw new Error('Kreditur "' + nama + '" sudah ada. Pilih dari daftar.');
+    const x = {...(lama || {id: idBaru(), aktif: true, dibuat: waktuDi(s, 'kreditur')}), nama, afiliasi: !!(d.afiliasi ?? lama?.afiliasi), kontak: d.kontak ?? lama?.kontak ?? null,
+      catatan: d.catatan ?? lama?.catatan ?? null, aktif: d.aktif ?? lama?.aktif ?? true};
+    const hasil = simpanBaris(s, 'kreditur', lama, x);
+    // Akun hutang mengikuti tanda afiliasi; hanya untuk hutang yang belum punya pembayaran.
+    for (const hu of s.hutang.filter((y) => y.kreditur_id === hasil.id)) {
+      const akun = akunHutang(hu.jenis, hasil.afiliasi);
+      if (akun === hu.akun_kode) continue;
+      if (bayarHutang(s, hu.id).length) throw new Error('Tanda afiliasi tidak bisa diubah: hutang ' + (hu.uraian || hasil.nama) + ' sudah punya pembayaran di akun ' + hu.akun_kode + '.');
+      cekBuka(s, tglJurnalHutang(hu));
+      simpanBaris(s, 'hutang', hu, {...hu, akun_kode: akun});
+      jurnalHutang(s, hu.id);
+    }
+    return hasil;
+  };
+  const tglJurnalHutang = (hu) => (hu.cara === 'tunai' ? hu.tgl_mulai : hu.cara === 'saldo_awal' ? hu.tgl_saldo_awal : null);
+  const jurnalHutang = (s, id) => {
+    const hu = hutangDari(s, id);
+    if (!hu || hu.cara === 'aset') return jurnalOtomatis(s, 'hutang', id, null);
+    const nama = s.kreditur.find((k) => k.id === hu.kreditur_id)?.nama || '';
+    const isi = {AKUN_HUTANG: akunKode(s, hu.akun_kode)?.id, REKENING: rekAkun(s, hu.rekening_id)};
+    if (hu.cara === 'saldo_awal') {
+      return jurnalOtomatis(s, 'hutang', hu.id, hu.tgl_saldo_awal, 'Saldo awal hutang ' + nama + (hu.uraian ? ' · ' + hu.uraian : ''),
+        [{jenis: 'hutang_saldo_ekuitas', jumlah: hu.sisa_pokok_awal}, {jenis: 'hutang_pokok', jumlah: hu.sisa_pokok_awal}], isi);
+    }
+    jurnalOtomatis(s, 'hutang', hu.id, hu.tgl_mulai, 'Pinjaman diterima dari ' + nama + (hu.uraian ? ' · ' + hu.uraian : ''),
+      [{jenis: 'hutang_terima', jumlah: hu.pokok}, {jenis: 'hutang_pokok', jumlah: hu.pokok}], isi);
+  };
+  const jurnalBayarHutang = (s, id) => {
+    const b = s.hutang_bayar.find((x) => x.id === id);
+    if (!b) return jurnalOtomatis(s, 'bayar_hutang', id, null);
+    const hu = hutangDari(s, b.hutang_id), nama = s.kreditur.find((k) => k.id === hu.kreditur_id)?.nama || '';
+    jurnalOtomatis(s, 'bayar_hutang', b.id, b.tanggal, (b.angsuran_ke ? 'Angsuran ke-' + b.angsuran_ke : 'Pembayaran pokok') + ' ' + nama + (hu.uraian ? ' · ' + hu.uraian : ''),
+      [{jenis: 'bayar_hutang_pokok', jumlah: b.pokok}, {jenis: 'bayar_hutang_bunga', jumlah: b.bunga}, {jenis: 'bayar_hutang_denda', jumlah: b.denda},
+        {jenis: 'bayar_hutang_kas', jumlah: b.pokok + b.bunga + b.denda}],
+      {AKUN_HUTANG: akunKode(s, hu.akun_kode)?.id, REKENING: rekAkun(s, b.rekening_id)});
+  };
+  const sisaHutangAset = (a) => totalBayar(a) - (a.uang_muka || 0);
+  const simpanJadwalDi = (s, hid, rows, sumber) => {
+    const hu = hutangDari(s, hid);
+    if (!hu) throw new Error('Hutang tidak ditemukan.');
+    const baris = rows.map((r, i) => ({no: r.no ?? i + 1, ke: +r.ke, tanggal: r.tanggal || null, pokok: +r.pokok, bunga: +(r.bunga || 0)}));
+    const tj = targetJadwal(hu, angsuranHutang(s, hid), bayarHutang(s, hid));
+    const galat = periksaJadwal(baris, tj);
+    if (galat.length) throw new Error(galat.slice(0, 5).join(' '));
+    for (const a of angsuranHutang(s, hid).filter((x) => x.ke > tj.K)) hapusBaris(s, 'hutang_angsuran', a);
+    for (const r of baris) simpanBaris(s, 'hutang_angsuran', null, {id: idBaru(), hutang_id: hid, ke: r.ke, tanggal: r.tanggal, pokok: r.pokok, bunga: r.bunga});
+    simpanBaris(s, 'hutang', hu, {...hu, jadwal_sumber: sumber === 'impor' ? 'impor' : 'otomatis'});
+    return baris.length;
+  };
+  const simpanHutangDi = (s, id, d, jadwal) => {
+    const lama = id ? hutangDari(s, id) : null;
+    if (id && !lama) throw new Error('Hutang tidak ditemukan.');
+    const dulu = lama && {...lama};
+    const kred = s.kreditur.find((k) => k.id === d.kreditur_id);
+    if (!kred || (!kred.aktif && kred.id !== lama?.kreditur_id)) throw new Error('Kreditur wajib dipilih dari daftar kreditur.');
+    if (!JENIS_HUTANG[d.jenis]) throw new Error('Jenis hutang wajib dipilih.');
+    const pokok = uangSah(d.pokok === '' || d.pokok == null ? -1 : d.pokok, 'Pokok pinjaman wajib diisi (rupiah utuh).');
+    if (!(pokok > 0)) throw new Error('Pokok pinjaman harus lebih dari 0.');
+    const metode = d.metode_bunga || 'flat';
+    if (!METODE_BUNGA[metode]) throw new Error('Jenis bunga tidak dikenal.');
+    const bunga = metode === 'tanpa' ? 0 : angka0(d.bunga_bp);
+    if (!Number.isInteger(bunga) || bunga < 0 || bunga > 10000) throw new Error('Suku bunga harus 0 sampai 100% per tahun.');
+    const tenor = d.tenor_bulan === '' || d.tenor_bulan == null ? null : +d.tenor_bulan;
+    if (tenor != null && !(Number.isInteger(tenor) && tenor >= 1 && tenor <= 600)) throw new Error('Tenor harus 1 sampai 600 bulan.');
+    const mulai = d.tgl_mulai || null;
+    if (!mulai) throw new Error('Tanggal mulai wajib diisi.');
+    const hari = d.hari_angsuran === '' || d.hari_angsuran == null ? +mulai.slice(8, 10) : +d.hari_angsuran;
+    if (!(Number.isInteger(hari) && hari >= 1 && hari <= 31)) throw new Error('Tanggal angsuran tiap bulan harus 1 sampai 31.');
+    if (!CARA_HUTANG[d.cara]) throw new Error('Pilih asal hutang: dana diterima ke rekening, kredit/leasing aset, atau saldo awal.');
+    let rek = null, asetId = null, saldo = null, sisaAwal = null;
+    if (d.cara === 'tunai') {
+      rek = d.rekening_id || null;
+      if (!rekeningBoleh(s, rek, lama?.rekening_id)) throw new Error('Rekening penerima dana wajib dipilih (rekening aktif).');
+    } else if (d.cara === 'aset') {
+      if (!['kredit_bank', 'leasing'].includes(d.jenis)) throw new Error('Tautan ke aset hanya untuk jenis Kredit bank atau Leasing.');
+      const a = asetDari(s, d.aset_id);
+      if (!a || !['kredit', 'leasing'].includes(a.cara)) throw new Error('Pilih aset yang dibeli dengan cara Kredit / Leasing.');
+      if (a.hutang_id && a.hutang_id !== id) throw new Error('Aset ' + a.kode + ' sudah tertaut ke hutang lain.');
+      if (pokok !== sisaHutangAset(a)) throw new Error('Pokok hutang harus sama dengan hutang aset ' + a.kode + ' di modul Aset: Rp ' + fmt(sisaHutangAset(a)) + ' (nilai dibayar − uang muka).');
+      asetId = a.id;
+    } else {
+      saldo = d.tgl_saldo_awal || null;
+      if (!saldo) throw new Error('Tanggal saldo awal wajib diisi.');
+      if (saldo < mulai) throw new Error('Tanggal saldo awal tidak boleh sebelum tanggal mulai pinjaman.');
+      if (saldo > hariIni()) throw new Error('Tanggal saldo awal tidak boleh di masa depan.');
+      sisaAwal = uangSah(d.sisa_pokok_awal === '' || d.sisa_pokok_awal == null ? -1 : d.sisa_pokok_awal, 'Sisa pokok per tanggal saldo awal wajib diisi.');
+      if (!(sisaAwal > 0) || sisaAwal > pokok) throw new Error('Sisa pokok per tanggal saldo awal harus lebih dari 0 dan tidak melebihi pokok.');
+    }
+    if (d.jaminan_aset_id && !asetDari(s, d.jaminan_aset_id)) throw new Error('Aset jaminan tidak ditemukan.');
+    const akun = akunHutang(d.jenis, kred.afiliasi);
+    const ada = lama ? bayarHutang(s, id) : [];
+    const UANG = {pokok, cara: d.cara, akun_kode: akun, tgl_saldo_awal: saldo, sisa_pokok_awal: sisaAwal, aset_id: asetId};
+    if (ada.length && !sama(lama, UANG, Object.keys(UANG))) throw new Error('Hutang ini sudah punya pembayaran: pokok, asal hutang, jenis / kreditur, aset, dan saldo awal tidak bisa diubah.');
+    if (saldo && ada.some((b) => b.tanggal < saldo)) throw new Error('Ada pembayaran sebelum tanggal saldo awal.');
+    if (ada.some((b) => b.tanggal < mulai)) throw new Error('Ada pembayaran sebelum tanggal mulai pinjaman.');
+    const x = {...(lama || {id: idBaru(), jadwal_sumber: 'otomatis', dibuat: waktuDi(s, 'hutang'), dibuat_oleh: email}), kreditur_id: kred.id, jenis: d.jenis,
+      uraian: String(d.uraian || '').trim() || null, no_perjanjian: String(d.no_perjanjian || '').trim() || null, tgl_perjanjian: d.tgl_perjanjian || null, file: d.file || null,
+      pokok, bunga_bp: bunga, metode_bunga: metode, tenor_bulan: tenor, tgl_mulai: mulai, hari_angsuran: hari, denda_ket: String(d.denda_ket || '').trim() || null,
+      cara: d.cara, rekening_id: rek, aset_id: asetId, tgl_saldo_awal: saldo, sisa_pokok_awal: sisaAwal, akun_kode: akun,
+      jaminan: String(d.jaminan || '').trim() || null, jaminan_aset_id: d.jaminan_aset_id || null, catatan: String(d.catatan || '').trim() || null};
+    const JUR = ['tgl_mulai', 'pokok', 'cara', 'rekening_id', 'akun_kode', 'tgl_saldo_awal', 'sisa_pokok_awal', 'kreditur_id', 'uraian'];
+    const jurnalBerubah = !dulu || !sama(dulu, x, JUR);
+    if (jurnalBerubah) { if (dulu) cekBuka(s, tglJurnalHutang(dulu)); cekBuka(s, tglJurnalHutang(x)); }
+    const hasil = simpanBaris(s, 'hutang', lama, x);
+    // Tautan aset (dua arah).
+    if (dulu?.aset_id && dulu.aset_id !== asetId) { const a = asetDari(s, dulu.aset_id); if (a) simpanBaris(s, 'aset', a, {...a, hutang_id: null}); }
+    if (asetId) { const a = asetDari(s, asetId); if (a.hutang_id !== hasil.id) simpanBaris(s, 'aset', a, {...a, hutang_id: hasil.id}); }
+    if (jurnalBerubah) jurnalHutang(s, hasil.id);
+    if (jadwal) simpanJadwalDi(s, hasil.id, jadwal, 'otomatis');
+    else if (!angsuranHutang(s, hasil.id).length && tenor) simpanJadwalDi(s, hasil.id, buatJadwal(hasil), 'otomatis');
+    return hutangDari(s, hasil.id);
+  };
+  const hapusHutangDi = (s, id) => {
+    const hu = hutangDari(s, id);
+    if (!hu) return;
+    if (bayarHutang(s, id).length) throw new Error('Hutang ini sudah punya pembayaran dan tidak bisa dihapus.');
+    cekBuka(s, tglJurnalHutang(hu));
+    for (const a of angsuranHutang(s, id)) hapusBaris(s, 'hutang_angsuran', a);
+    if (hu.aset_id) { const a = asetDari(s, hu.aset_id); if (a) simpanBaris(s, 'aset', a, {...a, hutang_id: null}); }
+    hapusBaris(s, 'hutang', hu);
+    jurnalHutang(s, id);
+  };
+  const simpanBayarHutangDi = (s, id, d) => {
+    const lama = id ? s.hutang_bayar.find((x) => x.id === id) : null;
+    if (id && !lama) throw new Error('Pembayaran tidak ditemukan.');
+    const hu = hutangDari(s, lama?.hutang_id || d.hutang_id);
+    if (!hu) throw new Error('Hutang tidak ditemukan.');
+    const tgl = d.tanggal || null;
+    if (!tgl) throw new Error('Tanggal bayar wajib diisi.');
+    if (tgl < hu.tgl_mulai) throw new Error('Tanggal bayar tidak boleh sebelum tanggal mulai pinjaman.');
+    if (hu.tgl_saldo_awal && tgl < hu.tgl_saldo_awal) throw new Error('Tanggal bayar tidak boleh sebelum tanggal saldo awal (pembayaran lama sudah termasuk di sisa pokok awal).');
+    const pokok = uangSah(d.pokok, 'Porsi pokok harus rupiah utuh, tidak minus.'), bunga = uangSah(d.bunga, 'Porsi bunga harus rupiah utuh, tidak minus.');
+    const denda = uangSah(d.denda, 'Denda harus rupiah utuh, tidak minus.');
+    if (pokok + bunga + denda <= 0) throw new Error('Isi jumlah yang dibayar (pokok, bunga, atau denda).');
+    const lain = bayarHutang(s, hu.id).filter((b) => b.id !== id);
+    const sisa = sisaPokok(hu, lain);
+    if (pokok > sisa) throw new Error('Porsi pokok Rp ' + fmt(pokok) + ' melebihi sisa pokok Rp ' + fmt(sisa) + '.');
+    const ke = d.angsuran_ke === '' || d.angsuran_ke == null ? null : +d.angsuran_ke;
+    if (ke != null) {
+      const a = angsuranHutang(s, hu.id).find((x) => x.ke === ke);
+      if (!a) throw new Error('Angsuran ke-' + ke + ' tidak ada di jadwal.');
+      if (hu.tgl_saldo_awal && a.tanggal < hu.tgl_saldo_awal) throw new Error('Angsuran ke-' + ke + ' sudah dibayar sebelum memakai aplikasi (termasuk saldo awal).');
+    }
+    if (!rekeningBoleh(s, d.rekening_id, lama?.rekening_id)) throw new Error('Rekening pembayar wajib dipilih (rekening aktif).');
+    if (lama) cekBuka(s, lama.tanggal);
+    cekBuka(s, tgl);
+    const x = {...(lama || {id: idBaru(), hutang_id: hu.id, dibuat: waktuDi(s, 'hutang_bayar'), dibuat_oleh: email}), angsuran_ke: ke, tanggal: tgl, pokok, bunga, denda,
+      rekening_id: d.rekening_id, bukti: d.bukti || null, catatan: String(d.catatan || '').trim() || null};
+    const hasil = simpanBaris(s, 'hutang_bayar', lama, x);
+    jurnalBayarHutang(s, hasil.id);
+    return hasil;
+  };
+  const hapusBayarHutangDi = (s, id) => {
+    const b = s.hutang_bayar.find((x) => x.id === id);
+    if (!b) return;
+    cekBuka(s, b.tanggal);
+    hapusBaris(s, 'hutang_bayar', b);
+    jurnalBayarHutang(s, id);
   };
   const simpanDokumenDi = (s, id, d) => {
     const lama = id ? s.aset_dokumen.find((x) => x.id === id) : null;
@@ -1483,6 +1681,12 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
     async simpanLokasiAset(id, d) { return ubah((s) => simpanLokasiDi(s, id, d)); },
     async simpanDokumenAset(id, d) { return ubah((s) => simpanDokumenDi(s, id, d)); },
     async hapusDokumenAset(id) { return ubah((s) => { const x = s.aset_dokumen.find((y) => y.id === id); if (x) hapusBaris(s, 'aset_dokumen', x); }); },
+    async simpanKreditur(id, d) { return ubah((s) => simpanKrediturDi(s, id, d)); },
+    async simpanHutang(id, d, jadwal) { return ubah((s) => simpanHutangDi(s, id, d, jadwal)); },
+    async hapusHutang(id) { return ubah((s) => hapusHutangDi(s, id)); },
+    async simpanJadwalHutang(hid, rows, sumber) { return ubah((s) => simpanJadwalDi(s, hid, rows, sumber)); },
+    async simpanBayarHutang(id, d) { return ubah((s) => simpanBayarHutangDi(s, id, d)); },
+    async hapusBayarHutang(id) { return ubah((s) => hapusBayarHutangDi(s, id)); },
     async statusNotifikasi() { return K.notifikasi_status.slice(); },
     async aturStatusNotifikasi(daftar) {
       for (const st of daftar) {
@@ -1544,6 +1748,11 @@ export function mesinLokal({email = 'Mode demo', hariIni, proyek = () => [], mas
         for (const a of s.aset) { jurnalAset(s, a.id); jurnalPelepasan(s, a.id); }
         for (const x of s.aset_servis) jurnalServis(s, x.id);
         for (const b of s.penyusutan_bulan) jurnalPenyusutan(s, b.id);
+        if (p.hutang) {
+          for (const t of TABEL_HUTANG) s[t] = (p[t] || []).map((x) => ({...x}));
+          for (const x of s.hutang) jurnalHutang(s, x.id);
+          for (const x of s.hutang_bayar) jurnalBayarHutang(s, x.id);
+        }
         s.tutup_buku = (p.tutup_buku || []).map((t) => ({bulan: t.bulan, ditutup_oleh: email, ditutup_pada: sekarang()}));
         if (p.perusahaan) s.perusahaan.data = p.perusahaan;
       });
@@ -1561,6 +1770,7 @@ export function cadanganDari(K) {
     kontrak_klien: K.kontrak_klien || [], kontrak_addendum: K.kontrak_addendum || [], termin: K.termin || [], penerimaan: K.penerimaan || [],
     ...Object.fromEntries(TABEL_PROYEK.map((t) => [t, K[t] || []])),
     ...(K.aset_siap === false ? {} : Object.fromEntries(TABEL_ASET.map((t) => [t, K[t] || []]))),
+    ...(K.hutang_siap === false ? {} : Object.fromEntries(TABEL_HUTANG.map((t) => [t, K[t] || []]))),
   };
 }
 
@@ -1614,8 +1824,17 @@ export function mesinSupabase(sb) {
         } catch (e) {
           if (!belumAda(e)) throw e;
         }
+        // Tahap 6: hutang lain.
+        let hutangKeu = {hutang_siap: false, ...Object.fromEntries(TABEL_HUTANG.map((t) => [t, []]))};
+        try {
+          const URUT = {kreditur: 'nama', hutang: 'dibuat', hutang_angsuran: 'ke', hutang_bayar: 'tanggal'};
+          const isi = await Promise.all(TABEL_HUTANG.map((t) => semua(t, URUT[t])));
+          hutangKeu = {hutang_siap: true, ...Object.fromEntries(TABEL_HUTANG.map((t, i) => [t, isi[i]]))};
+        } catch (e) {
+          if (!belumAda(e)) throw e;
+        }
         return {siap: true, akun, rekening, kas_transaksi, transfer, jurnal, jurnal_baris, pemetaan_jurnal, tutup_buku, tutup_buku_riwayat,
-          akuntansi: {...AKUNTANSI_BAWAAN, ...akuntansi[0]}, perusahaan: perusahaan[0] || {data: {}}, peran, ...kontrak, ...proyekKeu, ...asetKeu};
+          akuntansi: {...AKUNTANSI_BAWAAN, ...akuntansi[0]}, perusahaan: perusahaan[0] || {data: {}}, peran, ...kontrak, ...proyekKeu, ...asetKeu, ...hutangKeu};
       } catch (e) {
         if (belumAda(e)) return {...kosongKeuangan(), siap: false};
         throw e;
@@ -1696,6 +1915,17 @@ export function mesinSupabase(sb) {
     async simpanLokasiAset(id, d) { return tulisBaris('aset_lokasi', id, d); },
     async simpanDokumenAset(id, d) { return tulisBaris('aset_dokumen', id, d); },
     async hapusDokumenAset(id) { cek(await sb.from('aset_dokumen').delete().eq('id', id)); },
+    async simpanKreditur(id, d) { return cek(await sb.rpc('simpan_kreditur', {p_id: id || null, p: d})); },
+    async simpanHutang(id, d, jadwal) {
+      return cek(await sb.rpc('simpan_hutang', {p_id: id || null, p: Object.fromEntries(KOLOM_HUTANG.map((c) => [c, d[c] ?? null])),
+        p_jadwal: jadwal ? jadwal.map(({ke, tanggal, pokok, bunga}) => ({ke, tanggal, pokok, bunga})) : null}));
+    },
+    async hapusHutang(id) { cek(await sb.rpc('hapus_hutang', {p_id: id})); },
+    async simpanJadwalHutang(hid, rows, sumber) {
+      return cek(await sb.rpc('simpan_jadwal_hutang', {p_hutang: hid, p_baris: rows.map(({ke, tanggal, pokok, bunga}) => ({ke, tanggal, pokok, bunga})), p_sumber: sumber}));
+    },
+    async simpanBayarHutang(id, d) { return cek(await sb.rpc('simpan_bayar_hutang', {p_id: id || null, p: d})); },
+    async hapusBayarHutang(id) { cek(await sb.rpc('hapus_bayar_hutang', {p_id: id})); },
     async statusNotifikasi() {
       const {data, error} = await sb.from('notifikasi_status').select('kunci,dibaca,tunda_sampai');
       return error ? [] : data;
@@ -1712,7 +1942,8 @@ export function mesinSupabase(sb) {
 export const kosongKeuangan = () => ({akun: [], rekening: [], kas_transaksi: [], transfer: [], jurnal: [], jurnal_baris: [], pemetaan_jurnal: PEMETAAN,
   tutup_buku: [], tutup_buku_riwayat: [], akuntansi: {...AKUNTANSI_BAWAAN}, perusahaan: {data: {}}, peran: [],
   kontrak_siap: false, kontrak_klien: [], kontrak_addendum: [], termin: [], penerimaan: [],
-  proyek_siap: false, ...Object.fromEntries(TABEL_PROYEK.map((t) => [t, []])), aset_siap: false, ...Object.fromEntries(TABEL_ASET.map((t) => [t, []]))});
+  proyek_siap: false, ...Object.fromEntries(TABEL_PROYEK.map((t) => [t, []])), aset_siap: false, ...Object.fromEntries(TABEL_ASET.map((t) => [t, []])),
+  hutang_siap: false, ...Object.fromEntries(TABEL_HUTANG.map((t) => [t, []]))});
 
 // Pesan database yang teknis -> kalimat untuk pengguna.
 function terjemah(m) {

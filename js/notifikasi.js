@@ -18,7 +18,7 @@ export const JENIS_NOTIF = {
   legal: {label: 'Dokumen legal / izin akan habis', hari: 60, menu: 'legal', modul: 'legal'},
   aset: {label: 'Dokumen aset akan habis (pajak, STNK, lisensi, garansi, asuransi)', hari: 30, menu: 'aset', modul: 'aset'},
   aset_servis: {label: 'Aset berkondisi "Perlu servis"', hari: 0, menu: 'aset', modul: 'aset', tanpaHari: true},
-  hutang_lain: {label: 'Jatuh tempo hutang lain', hari: 14, menu: 'hutang_lain', modul: 'hutang_lain'},
+  hutang_lain: {label: 'Jatuh tempo angsuran hutang lain', hari: 14, menu: 'hutang_lain', modul: 'hutang_lain'},
   termin: {label: 'Jatuh tempo tagihan klien', hari: 7, menu: 'termin'},
   tenggat_proyek: {label: 'Tenggat pekerjaan proyek di kontrak', hari: 14, menu: 'kontrak'},
   retensi: {label: 'Retensi sudah bisa ditagih', hari: 0, menu: 'termin'},
@@ -63,7 +63,11 @@ export function hitungNotifikasi(today = hariIni()) {
     if (boleh('aset_servis')) for (const x of d.aset || []) if (x.status === 'Aktif' && x.kondisi === 'Perlu servis') {
       hasil.push({kunci: 'aset_servis:' + x.id, jenis: 'aset_servis', tanggal: today, judul: x.kode + ' ' + x.nama + ' perlu servis', ke: '#aset-' + x.id, sisa: 0});
     }
-    if (boleh('hutang_lain')) for (const x of d.hutang_lain || []) if (x.sisa > 0) tambah('hutang_lain', x.id, x.jatuh_tempo, 'Hutang ' + x.kreditur + ' jatuh tempo', '#t-hutang_lain');
+    // Satu pengingat per angsuran yang belum dibayar penuh: H-X sebelumnya, hari H, dan selama terlambat.
+    if (boleh('hutang_lain')) for (const x of d.hutang_lain || []) for (const r of x.jadwal || []) if (r.terbuka) {
+      tambah('hutang_lain', x.id + ':' + r.ke, r.tanggal, 'Angsuran ke-' + r.ke + ' ' + x.kreditur_nama + (x.uraian ? ' · ' + x.uraian : '') + ' ' + rp(r.kurang)
+        + (r.tanggal < today ? ' terlambat' : r.tanggal === today ? ' jatuh tempo hari ini' : ' jatuh tempo'), '#hutang-' + x.id);
+    }
     if (boleh('termin')) for (const x of d.termin || []) if (x.no_invoice && x.sisa > 0) {
       tambah('termin', x.id, x.jatuh_tempo, 'Tagihan ' + x.no_invoice + ' · ' + (x.nama_proyek || x.kode) + (x.jatuh_tempo < today ? ' lewat jatuh tempo, sisa ' + rp(x.sisa) : ' jatuh tempo'), '#piutang-' + x.id);
     }

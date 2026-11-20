@@ -210,7 +210,7 @@ export const TABEL = {
     kolom: [['nama_proyek', 'Proyek'], ['vendor', 'Vendor'], ['jenis', 'Jenis'], ['sumber_dana', 'Sumber dana', 'pill'], ['nilai', 'Nilai kontrak', 'uang'], ['opname', 'Opname', 'persen'], ['hak', 'Hak s.d. kini', 'uang'], ['dibayar', 'Dibayar', 'uang'], ['hutang', 'Hutang', 'uang'], ['retensi_ditahan', 'Retensi ditahan', 'uang'], ['dokumen_tertulis', 'Tertulis?', 'pill']],
   },
   hutang_lain: {
-    label: 'Hutang Lain', satuan: 'kewajiban', grup: 'Keuangan', akses: 'admin', urut: 'jatuh_tempo',
+    label: 'Hutang Lain', satuan: 'kewajiban', grup: 'Keuangan', akses: 'admin', urut: 'jatuh_tempo', tersembunyi: true, // sejak Tahap 6 di tabel hutang (menu Hutang Lain)
     bantuan: 'Hutang dan kewajiban di luar vendor proyek: pinjaman, sewa, pajak, cicilan.',
     isian: [
       {k: 'kreditur', label: 'Kreditur', t: 'teks', wajib: true},

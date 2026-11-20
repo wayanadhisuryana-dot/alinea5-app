@@ -326,7 +326,8 @@ function bagianPemetaan() {
     'opname_beban', 'opname_titipan', 'opname_hutang', 'opname_retensi', 'bayar_vendor_hutang', 'bayar_vendor_retensi', 'bayar_vendor_kas', 'bayar_vendor_pajak',
     'beli_material', 'beli_persediaan', 'beli_ppn', 'beli_titipan', 'beli_kas', 'beli_hutang', 'bayar_supplier_hutang', 'bayar_supplier_kas',
     'aset_perolehan', 'aset_ppn', 'aset_kas', 'aset_hutang', 'aset_saldo_akumulasi', 'aset_saldo_ekuitas', 'susut_beban', 'susut_akumulasi', 'lepas_akumulasi', 'lepas_kas', 'lepas_ppn', 'lepas_rugi', 'lepas_laba', 'lepas_aset',
-    'servis_beban', 'servis_aset', 'servis_kas'];
+    'servis_beban', 'servis_aset', 'servis_kas',
+    'hutang_terima', 'hutang_saldo_ekuitas', 'hutang_pokok', 'bayar_hutang_pokok', 'bayar_hutang_bunga', 'bayar_hutang_denda', 'bayar_hutang_kas'];
   rows.sort((a, b) => urutJenis.indexOf(a.jenis) - urutJenis.indexOf(b.jenis) || a.urut - b.urut);
   return h('section', {class: 'kartu'}, h('h2', null, 'Pemetaan jurnal'),
     h('p', null, 'Tabel ini menentukan akun debit dan kredit setiap jurnal otomatis. Tabel disimpan di database; aplikasi hanya membacanya. Jenis transaksi baru (gaji dan lainnya) ditambahkan pada tahap berikutnya.'),
@@ -646,7 +647,8 @@ const NAMA_AUDIT = {rekening: 'Rekening', kas_transaksi: 'Kas umum', transfer: '
   pembayaran_vendor: 'Pembayaran vendor', pembelian: 'Pembelian', pembelian_baris: 'Baris pembelian', pembayaran_supplier: 'Pembayaran supplier',
   pinjaman_proyek: 'Pinjaman antar proyek', pengembalian_pinjaman: 'Pengembalian pinjaman',
   aset: 'Aset', aset_kategori: 'Kategori aset', kelompok_fiskal: 'Kelompok fiskal', aset_lokasi: 'Lokasi aset', aset_mutasi: 'Mutasi aset', aset_servis: 'Servis aset',
-  aset_dokumen: 'Dokumen aset', penyusutan_bulan: 'Penyusutan bulanan'};
+  aset_dokumen: 'Dokumen aset', penyusutan_bulan: 'Penyusutan bulanan',
+  kreditur: 'Kreditur', hutang: 'Hutang lain', hutang_angsuran: 'Jadwal angsuran', hutang_bayar: 'Pembayaran hutang'};
 const AKSI = {insert: 'Tambah', update: 'Ubah', delete: 'Hapus'};
 const ringkasNilai = (v) => (v == null ? '—' : typeof v === 'object' ? (v.nama || v.path ? v.nama || v.path : JSON.stringify(v).slice(0, 60)) : typeof v === 'number' ? idn(v) : String(v).slice(0, 60));
 function perubahan(lama, baru) {

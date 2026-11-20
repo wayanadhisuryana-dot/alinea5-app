@@ -197,9 +197,11 @@ function tabInfo(a) {
       ['Biaya tambahan', a.biaya_tambahan ? rp(a.biaya_tambahan) : '—'], ['Diskon', a.diskon ? rp(a.diskon) : '—'], ['Nilai perolehan', h('b', null, rp(a.nilai_perolehan))],
       a.di_bawah_batas && ['Catatan', 'Di bawah batas kapitalisasi, tetap dicatat sebagai aset'],
       ['Cara perolehan', a.cara === 'saldo_awal' ? 'Saldo awal per ' + tgl(a.tgl_saldo_awal) + ' (tanpa uang keluar)'
-        : CARA_PEROLEHAN[a.cara] + (a.cara === 'tunai' ? ' dari ' + namaRekening(a.rekening_id) : ' · Hutang aset (2-8) ' + rp(totalBayar(a)))],
+        : CARA_PEROLEHAN[a.cara] + (a.cara === 'tunai' ? ' dari ' + namaRekening(a.rekening_id)
+          : (a.uang_muka ? ' · uang muka ' + rp(a.uang_muka) + ' dari ' + namaRekening(a.rekening_id) : '') + ' · Hutang aset (2-8) ' + rp(totalBayar(a) - (a.uang_muka || 0)))],
       a.cara === 'saldo_awal' && ['Akumulasi sebelum saldo awal', rp(a.akumulasi_awal || 0) + ' · nilai buku ' + rp(a.nilai_perolehan - (a.akumulasi_awal || 0)) + ' ke 3-2-01 Ekuitas saldo awal'],
-      ['kredit', 'leasing'].includes(a.cara) && ['Tautan hutang', a.hutang_id ? 'Tertaut' : pill('Menunggu tautan hutang')]]),
+      ['kredit', 'leasing'].includes(a.cara) && ['Tautan hutang', a.hutang_id ? h('a', {href: '#hutang-' + a.hutang_id}, 'Lihat hutang di menu Hutang Lain')
+        : h('span', null, pill('Menunggu tautan hutang'), ' ', h('a', {href: '#hutang', class: 'kecil'}, 'catat di Hutang Lain'))]]),
     h('h3', null, istilah(a) + ' komersial'),
     kat?.disusutkan ? rincian([['Mulai digunakan', tgl(a.tgl_mulai)], ['Umur ekonomis', tahunTeks(a.umur_bulan)], ['Nilai residu', rp(a.residu)], ['Metode', 'Garis lurus, bulanan'],
       ['Akun', nmAkun(kat.akun_aset_id) + ' · akumulasi ' + nmAkun(kat.akun_akumulasi_id) + ' · beban ' + nmAkun(kat.akun_beban_id)]])
@@ -374,6 +376,8 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
   const rekDaftar = rekAktif(x.rekening_id);
   const rek = pilihan('as-rek', [['', 'Pilih rekening…'], ...rekDaftar], x.rekening_id || (rekDaftar.length === 1 ? rekDaftar[0][0] : ''));
   const mRek = medan('Dibayar dari rekening', rek, {wajib: true});
+  const dp = uang('as-dp', x.uang_muka || '');
+  const mDp = medan('Uang muka (DP)', dp.el, {id: 'as-dp', bantuan: 'Dibayar dari rekening yang dipilih; sisanya menjadi hutang 2-8 (ditautkan di menu Hutang Lain). Kosongkan bila tanpa DP.'});
   const caraInfo = h('p', {class: 'kecil redup medan-lebar'});
   const tglSaldoBawaan = K().rekening.map((r) => r.tgl_saldo_awal).filter(Boolean).sort()[0] || hariIni();
   const tglSaldo = tanggal('as-tglsaldo', x.tgl_saldo_awal || tglSaldoBawaan);
@@ -434,7 +438,9 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
   const umurBulan = () => { const s = umur.value.trim().replace(',', '.'); return s === '' ? null : /^\d+(\.\d+)?$/.test(s) ? tahunKeBulan(+s) : NaN; };
   const baca = () => ({nama: nama.value.trim(), kategori_id: kat.value || null, no_seri: seri.value.trim() || null, supplier_id: supplier.querySelector('input[type=hidden]').value || null,
     tgl_perolehan: tglP.value || null, harga: harga.nilai(), ppn: ppn.nilai() || 0, ppn_kredit: kreditInp.checked && !kreditInp.disabled && (ppn.nilai() || 0) > 0,
-    biaya_tambahan: bt.nilai() || 0, diskon: diskon.nilai() || 0, cara: cara.value, rekening_id: cara.value === 'tunai' ? rek.value || null : null,
+    biaya_tambahan: bt.nilai() || 0, diskon: diskon.nilai() || 0, cara: cara.value,
+    uang_muka: ['kredit', 'leasing'].includes(cara.value) ? dp.nilai() || 0 : 0,
+    rekening_id: cara.value === 'tunai' || (['kredit', 'leasing'].includes(cara.value) && (dp.nilai() || 0) > 0) ? rek.value || null : null,
     tgl_saldo_awal: cara.value === 'saldo_awal' ? tglSaldo.value || null : null,
     tgl_mulai: katSek()?.disusutkan ? mulai.value || null : null, umur_bulan: katSek()?.disusutkan ? umurBulan() : null, residu: katSek()?.disusutkan ? residu.nilai() || 0 : 0,
     kelompok_id: katSek()?.disusutkan ? kel.value || null : null, bulan_fiskal: blnF.value ? blnF.value + '-01' : tglP.value || null,
@@ -474,14 +480,22 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
     batasBox.hidden = !(nilai > 0 && nilai < batas);
     batasBox.textContent = 'Nilai perolehan di bawah batas kapitalisasi (' + rp(batas) + '). Sebaiknya dicatat sebagai biaya (OPEX) lewat Kas umum. Bila tetap disimpan, aplikasi meminta konfirmasi.';
     // cara
-    mRek.hidden = cara.value !== 'tunai';
+    const kreditAset = ['kredit', 'leasing'].includes(cara.value);
+    mDp.hidden = !kreditAset;
+    mRek.hidden = !(cara.value === 'tunai' || (kreditAset && (dp.nilai() || 0) > 0));
+    mRek.querySelector('label').firstChild.textContent = cara.value === 'tunai' ? 'Dibayar dari rekening' : 'Uang muka dibayar dari rekening';
     mSaldo.hidden = !lamaAset;
     if (lamaAset) {
       const akumAwal = k && dd.tgl_saldo_awal && nilai > 0 ? akumulasiSampai({...dd, nilai_perolehan: nilai, status: 'Aktif', tgl_pelepasan: null}, k, [], idxBulan(dd.tgl_saldo_awal) - 1) : 0;
       caraInfo.textContent = 'Tidak ada uang keluar. Jurnal pada tanggal saldo awal: D akun aset ' + rp(nilai)
         + (akumAwal ? ' / K akumulasi ' + rp(akumAwal) + ' (penyusutan sampai bulan sebelumnya)' : '') + ' / K 3-2-01 Ekuitas saldo awal ' + rp(nilai - akumAwal)
         + ' (nilai buku). Pastikan aset ini belum dimasukkan lewat jurnal manual, agar tidak tercatat dua kali.';
-    } else caraInfo.textContent = cara.value === 'tunai' ? 'Jurnal: D akun aset / K rekening pembayar.' : 'Jurnal: D akun aset / K 2-8 Hutang aset. Status hutang: menunggu tautan hutang (fitur Hutang Lain menyusul di Tahap 6).';
+    } else if (cara.value === 'tunai') caraInfo.textContent = 'Jurnal: D akun aset / K rekening pembayar.';
+    else {
+      const um = dd.uang_muka || 0, sisaH = totalBayar(dd) - um;
+      caraInfo.textContent = 'Jurnal: D akun aset' + (um ? ' / K rekening uang muka ' + rp(um) : '') + ' / K 2-8 Hutang ' + rp(sisaH) + '. '
+        + (lama?.hutang_id ? 'Tertaut ke hutang di menu Hutang Lain (pokok hutang harus tetap ' + rp(sisaH) + ').' : 'Setelah disimpan, catat hutangnya di menu Hutang Lain → + Hutang → Asal: Kredit / leasing pembelian aset (pokok ' + rp(sisaH) + ').');
+    }
     // penyusutan
     const susut = !!k?.disusutkan;
     judulSusut.textContent = '4. ' + (k?.jenis === 'tak_berwujud' ? 'Amortisasi' : 'Penyusutan') + ' komersial';
@@ -514,15 +528,15 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
     if (status.value !== 'Aktif' && dd.tgl_pelepasan && nilai > 0) {
       const lp = hitungPelepasan({...contoh, status: status.value, tgl_pelepasan: dd.tgl_pelepasan, nilai_jual: dd.nilai_jual || 0}, k, servis);
       const pj = baca().ppn_jual || 0;
-      lepasInfo.replaceChildren(pj > 0 && h('div', null, 'Uang diterima ', h('b', null, rp((dd.nilai_jual || 0) + pj)), ' (nilai jual ' + rp(dd.nilai_jual || 0) + ' + PPN ' + rp(pj) + ' → 2-5 PPN Keluaran; terbitkan faktur pajak keluaran).'),
+      lepasInfo.replaceChildren(...[pj > 0 && h('div', null, 'Uang diterima ', h('b', null, rp((dd.nilai_jual || 0) + pj)), ' (nilai jual ' + rp(dd.nilai_jual || 0) + ' + PPN ' + rp(pj) + ' → 2-5 PPN Keluaran; terbitkan faktur pajak keluaran).'),
         h('div', null, 'Nilai buku saat dilepas ', h('b', null, rp(lp.buku)), ' (perolehan ' + rp(lp.perolehan) + ' − akumulasi ' + rp(lp.akumulasi) + ' sampai ' + namaBulan(bulanKe(idxBulan(dd.tgl_pelepasan) - 1)) + ').'),
         h('div', null, lp.laba >= 0 ? 'Laba pelepasan ' : 'Rugi pelepasan ', h('b', null, rp(Math.abs(lp.laba))), lp.laba >= 0 ? ' → 4-4 Laba Pelepasan Aset.' : ' → 7-2 Beban lain-lain.'),
-        h('div', {class: 'redup'}, 'Bulan pelepasan tidak disusutkan. Aset keluar dari daftar aktif.'));
+        h('div', {class: 'redup'}, 'Bulan pelepasan tidak disusutkan. Aset keluar dari daftar aktif.')].filter(Boolean));
     } else lepasInfo.replaceChildren();
   };
   kat.addEventListener('change', () => segar(true));
   [tglP, cara, tglSaldo, kel, blnF, mulai, status, tglLepas, lok, rek].forEach((e) => e.addEventListener('change', () => segar()));
-  [harga.inp, ppn.inp, bt.inp, diskon.inp, residu.inp, jual.inp, ppnJual.inp, umur].forEach((e) => e.addEventListener('input', () => segar()));
+  [harga.inp, ppn.inp, bt.inp, diskon.inp, residu.inp, jual.inp, ppnJual.inp, umur, dp.inp].forEach((e) => e.addEventListener('input', () => segar()));
   [kreditInp, pemId].forEach((e) => e.addEventListener('change', () => segar()));
   segar(!lama);
 
@@ -566,7 +580,7 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
       h('div', {class: 'medan'}, kredit, pkpInfo), medan('Biaya tambahan', bt.el, {id: 'as-bt', bantuan: 'Ongkir, pemasangan, balik nama, dll.'}), medan('Diskon', diskon.el, {id: 'as-diskon'}),
       h('div', {class: 'medan medan-lebar'}, nilaiBox, batasBox)),
     h('h3', null, '3. Cara perolehan'),
-    h('div', {class: 'form-grid'}, medan('Cara', cara, {wajib: true}), mRek, mSaldo, caraInfo),
+    h('div', {class: 'form-grid'}, medan('Cara', cara, {wajib: true}), mDp, mRek, mSaldo, caraInfo),
     h('div', null, judulSusut, bagSusut, tanpaSusut),
     h('div', null, judulFis, bagFis),
     h('h3', null, '6. Penempatan'),
@@ -579,7 +593,7 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
     galat,
     kaki(hapus, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, boleh ? 'Batal' : 'Tutup'), boleh && simpan)));
   if (!boleh) dlg.querySelectorAll('input, select, textarea').forEach((e) => { e.disabled = true; });
-  if (boleh && (kunciBeli || sudahLepas)) [tglP, harga.inp, ppn.inp, kreditInp, bt.inp, diskon.inp, cara, rek, tglSaldo, kat].forEach((e) => { e.disabled = true; });
+  if (boleh && (kunciBeli || sudahLepas)) [tglP, harga.inp, ppn.inp, kreditInp, bt.inp, diskon.inp, cara, rek, dp.inp, tglSaldo, kat].forEach((e) => { e.disabled = true; });
   if (boleh && sudahLepas) [mulai, umur, residu.inp].forEach((e) => { e.disabled = true; });
   if (lepas) status.focus();
 }

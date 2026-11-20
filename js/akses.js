@@ -18,7 +18,7 @@ export const MENU = [
   {k: 'termin', label: 'Termin & Piutang', grup: 'Keuangan', ke: 'piutang'},
   {k: 'pihak_proyek', label: 'Pihak Proyek', judul: 'Vendor / Tukang / Pihak Terkait Proyek', grup: 'Keuangan', ke: 'pihak-proyek'},
   {k: 'pembelian', label: 'Pembelian Material', grup: 'Keuangan', ke: 'pembelian'},
-  {k: 'hutang_lain', label: 'Hutang Lain', grup: 'Keuangan', ke: 't-hutang_lain', tabel: 'hutang_lain', modul: 'hutang_lain'},
+  {k: 'hutang_lain', label: 'Hutang Lain', grup: 'Keuangan', ke: 'hutang', modul: 'hutang_lain'},
   {k: 'kas', label: 'Kas & Bank', grup: 'Keuangan', ke: 'kas'},
   {k: 'jurnal', label: 'Jurnal', grup: 'Keuangan', ke: 'jurnal'},
   {k: 'laporan', label: 'Laporan', grup: 'Keuangan', ke: 'segera-laporan', segera: true},
