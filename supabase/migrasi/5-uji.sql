@@ -17,7 +17,7 @@ declare
   jan date; des date;
   rek uuid; sup uuid; pgw uuid;
   k_knd uuid; k_tnh uuid; k_kmp uuid;
-  a1 uuid; a2 uuid; a3 uuid; a4 uuid; a5 uuid; a6 uuid; a7 uuid; a8 uuid; s1 uuid; s2 uuid;
+  a1 uuid; a2 uuid; a3 uuid; a4 uuid; a5 uuid; a6 uuid; a7 uuid; a8 uuid; a9 uuid; s1 uuid; s2 uuid;
   kd1 text; kd2 text;
   n bigint; n2 bigint; d bigint; k bigint; x bigint; z bigint;
   r public.aset;
@@ -179,6 +179,38 @@ begin
     h := h || jsonb_build_object('uji', 'Bulan perolehan sudah ditutup: nilai tidak bisa diubah, tetapi nama / kondisi tetap bisa', 'hasil',
       case when e like 'Bulan % sudah ditutup%' and r.kondisi = 'Perlu servis' then '✓' else '✗' end, 'catatan', e);
     delete from public.tutup_buku;
+
+    -- 11. Aset dijual oleh perusahaan PKP: PPN keluaran ke 2-5, uang diterima = nilai jual + PPN; sebelum tanggal PKP ditolak.
+    perform public.simpan_aset(a3, jsonb_build_object('nama', 'UJI5 Laptop PKP', 'kategori_id', k_kmp, 'tgl_perolehan', make_date(y, 7, 1), 'harga', 20000000,
+      'ppn', 2200000, 'ppn_kredit', true, 'cara', 'tunai', 'rekening_id', rek, 'umur_bulan', 48, 'status', 'Dijual', 'tgl_pelepasan', make_date(y, 12, 10),
+      'nilai_jual', 15000000, 'ppn_jual', 1650000, 'rekening_jual_id', rek, 'alasan_pelepasan', 'Dijual'));
+    select * into r from public.aset where id = a3;
+    select coalesce(sum(b.kredit) filter (where b.akun_id = public.akun_kode('2-5')), 0), coalesce(sum(b.debit) filter (where b.akun_id = public.akun_rekening(rek)), 0)
+      into x, z from public.jurnal_baris b join public.jurnal j on j.id = b.jurnal_id where j.sumber = 'pelepasan_aset' and j.sumber_id = a3;
+    e := null;
+    begin perform public.simpan_aset(a4, jsonb_build_object('nama', 'UJI5 Laptop sebelum PKP', 'kategori_id', k_kmp, 'tgl_perolehan', make_date(y, 5, 1), 'harga', 20000000,
+      'ppn', 2200000, 'cara', 'kredit', 'umur_bulan', 48, 'status', 'Dijual', 'tgl_pelepasan', make_date(y, 5, 20), 'nilai_jual', 18000000, 'ppn_jual', 1980000,
+      'rekening_jual_id', rek, 'alasan_pelepasan', 'Dijual')); exception when others then e := sqlerrm; end;
+    h := h || jsonb_build_object('uji', 'Aset dijual saat PKP: K 2-5 PPN keluaran, rekening menerima nilai jual + PPN; laba/rugi dari nilai jual tanpa PPN; sebelum PKP ditolak', 'hasil',
+      case when r.ppn_jual = 1650000 and x = 1650000 and z = 16650000 and r.laba_lepas = 15000000 - (20000000 - 2083333) and e like 'PPN keluaran hanya bisa dipungut%' then '✓' else '✗' end,
+      'catatan', 'PPN ' || x || ' · diterima ' || z || ' · laba/rugi ' || r.laba_lepas || ' · ' || coalesce(e, 'tidak ditolak'));
+
+    -- 12. Saldo awal (aset lama): D aset / K akumulasi sebelumnya / K 3-2-01, tanpa uang keluar; penyusutan mulai bulan saldo awal.
+    a9 := public.simpan_aset(null, jsonb_build_object('nama', 'UJI5 Laptop lama', 'kategori_id', k_kmp, 'tgl_perolehan', make_date(y - 1, 1, 1), 'harga', 24000000,
+      'cara', 'saldo_awal', 'tgl_saldo_awal', jan, 'umur_bulan', 48));
+    select * into r from public.aset where id = a9;
+    select coalesce(sum(b.debit) filter (where b.akun_id = public.akun_kode('1-7')), 0), coalesce(sum(b.kredit) filter (where b.akun_id = public.akun_kode('1-8')), 0),
+      coalesce(sum(b.kredit) filter (where b.akun_id = public.akun_kode('3-2-01')), 0), count(*) filter (where b.akun_id = public.akun_rekening(rek))
+      into n, n2, d, k from public.jurnal_baris b join public.jurnal j on j.id = b.jurnal_id where j.sumber = 'aset' and j.sumber_id = a9 and j.tanggal = jan;
+    perform public.bukukan_penyusutan(des);
+    select coalesce(sum(pa.jumlah) filter (where b.bulan >= jan), 0), count(*) filter (where b.bulan < jan) into x, z
+      from public.penyusutan_aset pa join public.penyusutan_bulan b on b.id = pa.bulan_id where pa.aset_id = a9;
+    e := null;
+    begin perform public.simpan_servis_aset(null, jsonb_build_object('aset_id', a9, 'tanggal', make_date(y - 1, 6, 1), 'uraian', 'Servis lama', 'biaya', 100000, 'rekening_id', rek));
+    exception when others then e := sqlerrm; end;
+    h := h || jsonb_build_object('uji', 'Saldo awal aset lama: D 1-7 / K 1-8 akumulasi sebelumnya / K 3-2-01, tanpa rekening; penyusutan mulai bulan saldo awal', 'hasil',
+      case when r.akumulasi_awal = 6000000 and n = 24000000 and n2 = 6000000 and d = 18000000 and k = 0 and x = 6000000 and z = 0 and e like 'Servis sebelum tanggal saldo awal%' then '✓' else '✗' end,
+      'catatan', 'akumulasi awal ' || r.akumulasi_awal || ' · ekuitas ' || d || ' · penyusutan tahun ' || y || ' ' || x || ' · ' || coalesce(e, 'servis lama tidak ditolak'));
 
     execute 'set constraints all immediate';
     execute 'set constraints all deferred';

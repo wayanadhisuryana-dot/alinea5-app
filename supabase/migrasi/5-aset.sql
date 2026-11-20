@@ -103,7 +103,7 @@ create table if not exists public.aset (
   diskon bigint not null default 0 check (diskon >= 0),
   nilai_perolehan bigint not null check (nilai_perolehan > 0),
   di_bawah_batas boolean not null default false,
-  cara text not null check (cara in ('tunai', 'kredit', 'leasing')),
+  cara text not null check (cara in ('tunai', 'kredit', 'leasing', 'saldo_awal')),
   rekening_id uuid references public.rekening (id),
   hutang_id uuid, -- diisi di Tahap 6 (Hutang Lain); kosong = menunggu tautan hutang
   tgl_mulai date,
@@ -136,6 +136,18 @@ create table if not exists public.aset (
   check (tgl_pelepasan is null or tgl_pelepasan >= tgl_perolehan)
 );
 create index if not exists aset_kategori_idx on public.aset (kategori_id);
+-- Saldo awal (aset yang dimiliki sebelum memakai aplikasi) dan PPN keluaran atas penjualan aset.
+-- Ditulis dengan "if not exists" / drop-add supaya file ini aman dijalankan ulang.
+alter table public.aset add column if not exists tgl_saldo_awal date;
+alter table public.aset add column if not exists akumulasi_awal bigint not null default 0;
+alter table public.aset add column if not exists ppn_jual bigint not null default 0;
+alter table public.aset drop constraint if exists aset_cara_check;
+alter table public.aset add constraint aset_cara_check check (cara in ('tunai', 'kredit', 'leasing', 'saldo_awal'));
+alter table public.aset drop constraint if exists aset_saldo_awal_cek;
+alter table public.aset add constraint aset_saldo_awal_cek check ((cara = 'saldo_awal') = (tgl_saldo_awal is not null)
+  and (tgl_saldo_awal is null or tgl_saldo_awal >= tgl_perolehan) and akumulasi_awal >= 0 and (cara = 'saldo_awal' or akumulasi_awal = 0));
+alter table public.aset drop constraint if exists aset_ppn_jual_cek;
+alter table public.aset add constraint aset_ppn_jual_cek check (ppn_jual >= 0 and (ppn_jual = 0 or (status = 'Dijual' and nilai_jual > 0)));
 
 -- Riwayat mutasi penempatan (pemegang / lokasi). Tidak ditimpa: setiap perubahan baris baru.
 create table if not exists public.aset_mutasi (
@@ -239,10 +251,13 @@ insert into public.pemetaan_jurnal (jenis, urut, nama, sisi, akun, keterangan) v
   ('aset_ppn', 1, 'Perolehan aset – PPN masukan', 'D', '1-4', 'PPN Masukan (bila PKP dan PPN dapat dikreditkan)'),
   ('aset_kas', 1, 'Perolehan aset – dibayar tunai / transfer', 'K', 'REKENING', 'Rekening pembayar'),
   ('aset_hutang', 1, 'Perolehan aset – kredit / leasing', 'K', '2-8', 'Hutang Bank / Leasing (ditautkan ke Hutang Lain di Tahap 6)'),
+  ('aset_saldo_akumulasi', 1, 'Saldo awal aset – akumulasi penyusutan sebelumnya', 'K', 'AKUN_AKUMULASI', 'Akumulasi s.d. bulan sebelum tanggal saldo awal'),
+  ('aset_saldo_ekuitas', 1, 'Saldo awal aset – nilai buku', 'K', '3-2-01', 'Ekuitas saldo awal (tanpa uang keluar)'),
   ('susut_beban', 1, 'Penyusutan / amortisasi bulanan – beban', 'D', 'AKUN_BEBAN', 'Akun beban kategori (mis. 6-4 Beban Penyusutan & Amortisasi)'),
   ('susut_akumulasi', 1, 'Penyusutan / amortisasi bulanan – akumulasi', 'K', 'AKUN_AKUMULASI', 'Akun akumulasi kategori (mis. 1-8 Akumulasi Penyusutan)'),
   ('lepas_akumulasi', 1, 'Pelepasan aset – akumulasi dihapus', 'D', 'AKUN_AKUMULASI', 'Akumulasi penyusutan sampai bulan sebelum pelepasan'),
-  ('lepas_kas', 1, 'Pelepasan aset – uang hasil penjualan', 'D', 'REKENING', 'Rekening penerima nilai jual'),
+  ('lepas_kas', 1, 'Pelepasan aset – uang hasil penjualan', 'D', 'REKENING', 'Rekening penerima nilai jual + PPN keluaran'),
+  ('lepas_ppn', 1, 'Pelepasan aset – PPN keluaran', 'K', '2-5', 'PPN Keluaran atas penjualan aset (bila PKP)'),
   ('lepas_rugi', 1, 'Pelepasan aset – rugi', 'D', '7-2', 'Rugi Pelepasan Aset'),
   ('lepas_laba', 1, 'Pelepasan aset – laba', 'K', '4-4', 'Laba Pelepasan Aset'),
   ('lepas_aset', 1, 'Pelepasan aset – nilai perolehan dihapus', 'K', 'AKUN_ASET', 'Akun aset kategori (nilai perolehan + servis dikapitalisasi)'),
@@ -347,6 +362,15 @@ begin
   select * into a from public.aset where id = p_id;
   if a.id is null then perform public.jurnal_otomatis('aset', p_id, null, null, null, null); return; end if;
   select * into k from public.aset_kategori where id = a.kategori_id;
+  if a.cara = 'saldo_awal' then
+    -- Aset lama: tidak ada uang keluar. D aset / K akumulasi sebelumnya / K 3-2-01 Ekuitas saldo awal (nilai buku).
+    perform public.jurnal_otomatis('aset', a.id, a.tgl_saldo_awal, 'Saldo awal aset ' || a.kode || ' ' || a.nama,
+      jsonb_build_array(jsonb_build_object('jenis', 'aset_perolehan', 'jumlah', a.nilai_perolehan),
+        jsonb_build_object('jenis', 'aset_saldo_akumulasi', 'jumlah', a.akumulasi_awal),
+        jsonb_build_object('jenis', 'aset_saldo_ekuitas', 'jumlah', a.nilai_perolehan - a.akumulasi_awal)),
+      jsonb_build_object('AKUN_ASET', k.akun_aset_id, 'AKUN_AKUMULASI', k.akun_akumulasi_id));
+    return;
+  end if;
   perform public.jurnal_otomatis('aset', a.id, a.tgl_perolehan, 'Perolehan aset ' || a.kode || ' ' || a.nama,
     jsonb_build_array(jsonb_build_object('jenis', 'aset_perolehan', 'jumlah', a.nilai_perolehan),
       jsonb_build_object('jenis', 'aset_ppn', 'jumlah', case when a.ppn_kredit then a.ppn else 0 end),
@@ -364,7 +388,8 @@ begin
   select * into k from public.aset_kategori where id = a.kategori_id;
   perform public.jurnal_otomatis('pelepasan_aset', a.id, a.tgl_pelepasan, 'Pelepasan aset ' || a.kode || ' ' || a.nama || ' (' || lower(a.status) || ')',
     jsonb_build_array(jsonb_build_object('jenis', 'lepas_akumulasi', 'jumlah', a.akumulasi_lepas),
-      jsonb_build_object('jenis', 'lepas_kas', 'jumlah', a.nilai_jual),
+      jsonb_build_object('jenis', 'lepas_kas', 'jumlah', a.nilai_jual + a.ppn_jual),
+      jsonb_build_object('jenis', 'lepas_ppn', 'jumlah', a.ppn_jual),
       jsonb_build_object('jenis', 'lepas_rugi', 'jumlah', greatest(-a.laba_lepas, 0)),
       jsonb_build_object('jenis', 'lepas_laba', 'jumlah', greatest(a.laba_lepas, 0)),
       jsonb_build_object('jenis', 'lepas_aset', 'jumlah', a.akumulasi_lepas + a.nilai_buku_lepas)),
@@ -428,7 +453,8 @@ declare
   v_kondisi text := coalesce(nullif(p ->> 'kondisi', ''), 'Baik');
   v_nilai bigint;
   v_mulai date; v_umur int; v_residu bigint;
-  v_lepas date; v_jual bigint; v_rek_jual uuid;
+  v_lepas date; v_jual bigint; v_rek_jual uuid; v_ppn_jual bigint := 0;
+  v_saldo date;
   v_sup_id uuid; v_sup_nama text; v_pem_id uuid; v_pem_nama text; v_lok_id uuid;
   v_kode text;
   v_batas bigint;
@@ -451,7 +477,7 @@ begin
   if v_harga < 0 then raise exception 'Harga sebelum PPN wajib diisi (rupiah utuh, tidak minus).'; end if;
   if v_ppn < 0 or v_bt < 0 or v_diskon < 0 then raise exception 'PPN, biaya tambahan, dan diskon tidak boleh minus.'; end if;
   if v_ppn = 0 then v_kredit := false; end if;
-  if v_kredit and not public.pkp_pada(v_tgl) then
+  if v_kredit and coalesce(v_cara, '') <> 'saldo_awal' and not public.pkp_pada(v_tgl) then
     raise exception 'PPN hanya bisa dikreditkan bila perusahaan sudah PKP pada tanggal perolehan (lihat Pengaturan → Profil perusahaan).';
   end if;
   v_nilai := v_harga + v_bt - v_diskon + case when v_kredit then 0 else v_ppn end;
@@ -460,7 +486,16 @@ begin
   if v_nilai < coalesce(v_batas, 0) and not coalesce((p ->> 'tetap_aset')::boolean, false) then
     raise exception 'Nilai perolehan di bawah batas kapitalisasi. Sebaiknya dicatat sebagai biaya (OPEX).';
   end if;
-  if coalesce(v_cara, '') not in ('tunai', 'kredit', 'leasing') then raise exception 'Cara perolehan wajib dipilih.'; end if;
+  if coalesce(v_cara, '') not in ('tunai', 'kredit', 'leasing', 'saldo_awal') then raise exception 'Cara perolehan wajib dipilih.'; end if;
+  if v_cara = 'saldo_awal' then
+    v_saldo := nullif(p ->> 'tgl_saldo_awal', '')::date;
+    if v_saldo is null then raise exception 'Tanggal saldo awal wajib diisi (tanggal aset mulai dicatat di aplikasi).'; end if;
+    if v_saldo < v_tgl then raise exception 'Tanggal saldo awal tidak boleh sebelum tanggal perolehan.'; end if;
+    if v_saldo > public.hari_ini() then raise exception 'Tanggal saldo awal tidak boleh di masa depan.'; end if;
+    if lama.id is not null and exists (select 1 from public.aset_servis where aset_id = lama.id and tanggal < v_saldo) then
+      raise exception 'Ada servis sebelum tanggal saldo awal. Hapus atau ubah servis itu dulu.';
+    end if;
+  end if;
   if v_cara = 'tunai' and not exists (select 1 from public.rekening where id = nullif(p ->> 'rekening_id', '')::uuid and (aktif or id = lama.rekening_id)) then
     raise exception 'Rekening pembayar wajib dipilih (rekening aktif).';
   end if;
@@ -496,10 +531,16 @@ begin
     v_jual := case when v_status = 'Dijual' then coalesce(nullif(p ->> 'nilai_jual', '')::bigint, -1) else 0 end;
     if v_lepas is null then raise exception 'Tanggal pelepasan wajib diisi.'; end if;
     if v_lepas < v_tgl then raise exception 'Tanggal pelepasan tidak boleh sebelum tanggal perolehan.'; end if;
+    if v_lepas < v_saldo then raise exception 'Tanggal pelepasan tidak boleh sebelum tanggal saldo awal.'; end if;
     if v_lepas > public.hari_ini() then raise exception 'Tanggal pelepasan tidak boleh di masa depan.'; end if;
     if v_jual < 0 then raise exception 'Nilai jual wajib diisi (rupiah utuh, 0 atau lebih).'; end if;
     if btrim(coalesce(p ->> 'alasan_pelepasan', '')) = '' then raise exception 'Alasan pelepasan wajib diisi.'; end if;
     if v_jual > 0 then
+      v_ppn_jual := coalesce(nullif(p ->> 'ppn_jual', '')::bigint, 0);
+      if v_ppn_jual < 0 then raise exception 'PPN keluaran tidak boleh minus.'; end if;
+      if v_ppn_jual > 0 and not public.pkp_pada(v_lepas) then
+        raise exception 'PPN keluaran hanya bisa dipungut bila perusahaan sudah PKP pada tanggal penjualan (lihat Pengaturan → Profil perusahaan).';
+      end if;
       v_rek_jual := nullif(p ->> 'rekening_jual_id', '')::uuid;
       if not exists (select 1 from public.rekening where id = v_rek_jual and (aktif or id = lama.rekening_jual_id)) then
         raise exception 'Rekening penerima hasil penjualan wajib dipilih (rekening aktif).';
@@ -511,15 +552,15 @@ begin
   end if;
 
   v_beli_berubah := lama.id is null or (lama.tgl_perolehan, lama.harga, lama.ppn, lama.ppn_kredit, lama.biaya_tambahan, lama.diskon, lama.cara,
-    coalesce(lama.rekening_id::text, ''), lama.kategori_id) is distinct from
-    (v_tgl, v_harga, v_ppn, v_kredit, v_bt, v_diskon, v_cara, coalesce(case when v_cara = 'tunai' then p ->> 'rekening_id' end, ''), kat.id);
+    coalesce(lama.rekening_id::text, ''), lama.kategori_id, lama.tgl_saldo_awal) is distinct from
+    (v_tgl, v_harga, v_ppn, v_kredit, v_bt, v_diskon, v_cara, coalesce(case when v_cara = 'tunai' then p ->> 'rekening_id' end, ''), kat.id, v_saldo);
   if lama.id is not null and lama.status <> 'Aktif' and v_status <> 'Aktif'
      and (v_beli_berubah or (lama.tgl_mulai, lama.umur_bulan, lama.residu) is distinct from (v_mulai, v_umur, v_residu)) then
     raise exception 'Aset ini sudah dilepas: nilai perolehan dan penyusutannya tidak bisa diubah. Ubah status ke Aktif dulu bila perlu koreksi.';
   end if;
   if v_beli_berubah then
-    if lama.id is not null then perform public.cek_bulan_terbuka(lama.tgl_perolehan); end if;
-    perform public.cek_bulan_terbuka(v_tgl);
+    if lama.id is not null then perform public.cek_bulan_terbuka(coalesce(lama.tgl_saldo_awal, lama.tgl_perolehan)); end if;
+    perform public.cek_bulan_terbuka(coalesce(v_saldo, v_tgl));
   end if;
 
   if lama.id is null then
@@ -535,12 +576,12 @@ begin
     faktur = coalesce(p -> 'faktur', '[]'::jsonb), foto = coalesce(p -> 'foto', '[]'::jsonb),
     tgl_perolehan = v_tgl, harga = v_harga, ppn = v_ppn, ppn_kredit = v_kredit, biaya_tambahan = v_bt, diskon = v_diskon, nilai_perolehan = v_nilai,
     di_bawah_batas = v_nilai < coalesce(v_batas, 0),
-    cara = v_cara, rekening_id = case when v_cara = 'tunai' then (p ->> 'rekening_id')::uuid end,
+    cara = v_cara, rekening_id = case when v_cara = 'tunai' then (p ->> 'rekening_id')::uuid end, tgl_saldo_awal = v_saldo,
     tgl_mulai = v_mulai, umur_bulan = v_umur, residu = v_residu,
     kelompok_id = nullif(p ->> 'kelompok_id', '')::uuid,
     bulan_fiskal = date_trunc('month', coalesce(nullif(p ->> 'bulan_fiskal', '')::date, v_tgl))::date,
     pemegang_id = v_pem_id, pemegang_nama = v_pem_nama, lokasi_id = v_lok_id,
-    kondisi = v_kondisi, status = v_status, tgl_pelepasan = v_lepas, nilai_jual = coalesce(v_jual, 0), rekening_jual_id = v_rek_jual,
+    kondisi = v_kondisi, status = v_status, tgl_pelepasan = v_lepas, nilai_jual = coalesce(v_jual, 0), ppn_jual = v_ppn_jual, rekening_jual_id = v_rek_jual,
     alasan_pelepasan = case when v_status <> 'Aktif' then btrim(p ->> 'alasan_pelepasan') end,
     catatan = nullif(p ->> 'catatan', '')
   where id = v_id;
@@ -549,10 +590,16 @@ begin
   from (select public.akumulasi_aset(v_id, public.idx_bulan(v_lepas) - 1) as akum, public.perolehan_aset_pada(v_id, v_lepas) as perolehan) x
   where id = v_id and v_lepas is not null;
   update public.aset set akumulasi_lepas = null, nilai_buku_lepas = null, laba_lepas = null where id = v_id and v_lepas is null;
+  -- Saldo awal: akumulasi penyusutan sampai bulan sebelum tanggal saldo awal (sudah terjadi sebelum memakai aplikasi).
+  update public.aset set akumulasi_awal = case when v_saldo is null then 0 else public.akumulasi_aset(v_id, public.idx_bulan(v_saldo) - 1) end where id = v_id;
   select * into baru from public.aset where id = v_id;
+  if lama.id is not null and not v_beli_berubah and lama.akumulasi_awal is distinct from baru.akumulasi_awal then
+    v_beli_berubah := true;
+    perform public.cek_bulan_terbuka(coalesce(baru.tgl_saldo_awal, baru.tgl_perolehan));
+  end if;
 
-  v_lepas_berubah := (lama.status, lama.tgl_pelepasan, lama.nilai_jual, lama.rekening_jual_id, lama.akumulasi_lepas, lama.nilai_buku_lepas)
-    is distinct from (baru.status, baru.tgl_pelepasan, baru.nilai_jual, baru.rekening_jual_id, baru.akumulasi_lepas, baru.nilai_buku_lepas)
+  v_lepas_berubah := (lama.status, lama.tgl_pelepasan, lama.nilai_jual, lama.ppn_jual, lama.rekening_jual_id, lama.akumulasi_lepas, lama.nilai_buku_lepas)
+    is distinct from (baru.status, baru.tgl_pelepasan, baru.nilai_jual, baru.ppn_jual, baru.rekening_jual_id, baru.akumulasi_lepas, baru.nilai_buku_lepas)
     or (v_beli_berubah and baru.status <> 'Aktif');
   if v_lepas_berubah then
     perform public.cek_bulan_terbuka(lama.tgl_pelepasan);
@@ -586,7 +633,7 @@ begin
   if exists (select 1 from public.penyusutan_aset pa join public.penyusutan_bulan pb on pb.id = pa.bulan_id where pa.aset_id = p_id and public.bulan_terkunci(pb.bulan)) then
     raise exception 'Penyusutan aset ini sudah dibukukan di bulan yang ditutup. Aset tidak bisa dihapus; ubah statusnya (dihapuskan) bila perlu.';
   end if;
-  perform public.cek_bulan_terbuka(a.tgl_perolehan);
+  perform public.cek_bulan_terbuka(coalesce(a.tgl_saldo_awal, a.tgl_perolehan));
   perform public.cek_bulan_terbuka(a.tgl_pelepasan);
   for b in select bulan_id from public.penyusutan_aset where aset_id = p_id loop
     delete from public.penyusutan_aset where bulan_id = b.bulan_id and aset_id = p_id;
@@ -627,6 +674,7 @@ begin
   select disusutkan into v_susut from public.aset_kategori where id = a.kategori_id;
   if v_tgl is null then raise exception 'Tanggal servis wajib diisi.'; end if;
   if v_tgl < a.tgl_perolehan then raise exception 'Tanggal servis tidak boleh sebelum tanggal perolehan aset.'; end if;
+  if v_tgl < a.tgl_saldo_awal then raise exception 'Servis sebelum tanggal saldo awal tidak dicatat (sudah termasuk dalam nilai saldo awal aset).'; end if;
   if a.status <> 'Aktif' and v_tgl > a.tgl_pelepasan then raise exception 'Aset sudah dilepas; servis setelah tanggal pelepasan tidak bisa dicatat.'; end if;
   if btrim(coalesce(p ->> 'uraian', '')) = '' then raise exception 'Uraian servis wajib diisi.'; end if;
   if v_biaya < 0 then raise exception 'Biaya tidak boleh minus.'; end if;
@@ -693,7 +741,7 @@ declare
 begin
   if public.hak('aset') is distinct from 'ubah' then raise exception 'Anda tidak punya hak membukukan penyusutan.'; end if;
   perform pg_advisory_xact_lock(hashtext('bukukan_penyusutan'));
-  select least((select min(public.idx_bulan(a.tgl_mulai)) from public.aset a join public.aset_kategori k on k.id = a.kategori_id
+  select least((select min(greatest(public.idx_bulan(a.tgl_mulai), coalesce(public.idx_bulan(a.tgl_saldo_awal), 0))) from public.aset a join public.aset_kategori k on k.id = a.kategori_id
                 where k.disusutkan and a.umur_bulan > 0 and a.tgl_mulai is not null),
                (select min(public.idx_bulan(bulan)) from public.penyusutan_bulan)) into v_awal;
   if v_awal is null then return 0; end if;
@@ -702,6 +750,8 @@ begin
     continue when public.bulan_terkunci(v_bulan);
     select coalesce(jsonb_object_agg(x.id, x.jumlah) filter (where x.jumlah <> 0), '{}'::jsonb) into v_ingin
     from (select a.id, public.akumulasi_aset(a.id, v_x)
+            -- Aset saldo awal: penyusutan sebelum bulan saldo awal sudah masuk jurnal saldo awal (akumulasi_awal).
+            - case when a.cara <> 'saldo_awal' then 0 when v_x < public.idx_bulan(a.tgl_saldo_awal) then public.akumulasi_aset(a.id, v_x) else a.akumulasi_awal end
             - coalesce((select sum(pa.jumlah) from public.penyusutan_aset pa join public.penyusutan_bulan b on b.id = pa.bulan_id
                         where pa.aset_id = a.id and b.bulan < v_bulan), 0) as jumlah
           from public.aset a) x;

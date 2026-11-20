@@ -325,7 +325,7 @@ function bagianPemetaan() {
     'terima_rekening', 'terima_potongan', 'terima_pendapatan', 'terima_titipan', 'terima_ppn', 'terima_piutang',
     'opname_beban', 'opname_titipan', 'opname_hutang', 'opname_retensi', 'bayar_vendor_hutang', 'bayar_vendor_retensi', 'bayar_vendor_kas', 'bayar_vendor_pajak',
     'beli_material', 'beli_persediaan', 'beli_ppn', 'beli_titipan', 'beli_kas', 'beli_hutang', 'bayar_supplier_hutang', 'bayar_supplier_kas',
-    'aset_perolehan', 'aset_ppn', 'aset_kas', 'aset_hutang', 'susut_beban', 'susut_akumulasi', 'lepas_akumulasi', 'lepas_kas', 'lepas_rugi', 'lepas_laba', 'lepas_aset',
+    'aset_perolehan', 'aset_ppn', 'aset_kas', 'aset_hutang', 'aset_saldo_akumulasi', 'aset_saldo_ekuitas', 'susut_beban', 'susut_akumulasi', 'lepas_akumulasi', 'lepas_kas', 'lepas_ppn', 'lepas_rugi', 'lepas_laba', 'lepas_aset',
     'servis_beban', 'servis_aset', 'servis_kas'];
   rows.sort((a, b) => urutJenis.indexOf(a.jenis) - urutJenis.indexOf(b.jenis) || a.urut - b.urut);
   return h('section', {class: 'kartu'}, h('h2', null, 'Pemetaan jurnal'),

@@ -62,7 +62,8 @@ drop function if exists public.idx_bulan(date);
 drop function if exists public.bulan_idx(integer);
 
 delete from public.pemetaan_jurnal where jenis in ('aset_perolehan', 'aset_ppn', 'aset_kas', 'aset_hutang', 'susut_beban', 'susut_akumulasi',
-  'lepas_akumulasi', 'lepas_kas', 'lepas_rugi', 'lepas_laba', 'lepas_aset', 'servis_beban', 'servis_aset', 'servis_kas');
+  'lepas_akumulasi', 'lepas_kas', 'lepas_rugi', 'lepas_laba', 'lepas_aset', 'servis_beban', 'servis_aset', 'servis_kas',
+  'aset_saldo_akumulasi', 'aset_saldo_ekuitas', 'lepas_ppn');
 alter table public.jurnal drop constraint if exists jurnal_sumber_check;
 alter table public.jurnal add constraint jurnal_sumber_check check (sumber in ('manual', 'saldo_awal', 'kas', 'transfer', 'penerimaan', 'invoice',
   'opname', 'bayar_vendor', 'pembelian', 'bayar_supplier'));

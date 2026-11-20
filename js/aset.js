@@ -196,8 +196,10 @@ function tabInfo(a) {
     rincian([['Tanggal perolehan', tgl(a.tgl_perolehan)], ['Harga sebelum PPN', rp(a.harga)], ['PPN', a.ppn ? rp(a.ppn) + (a.ppn_kredit ? ' (dikreditkan, tidak masuk nilai)' : ' (masuk nilai perolehan)') : '—'],
       ['Biaya tambahan', a.biaya_tambahan ? rp(a.biaya_tambahan) : '—'], ['Diskon', a.diskon ? rp(a.diskon) : '—'], ['Nilai perolehan', h('b', null, rp(a.nilai_perolehan))],
       a.di_bawah_batas && ['Catatan', 'Di bawah batas kapitalisasi, tetap dicatat sebagai aset'],
-      ['Cara perolehan', CARA_PEROLEHAN[a.cara] + (a.cara === 'tunai' ? ' dari ' + namaRekening(a.rekening_id) : ' · Hutang aset (2-8) ' + rp(totalBayar(a)))],
-      a.cara !== 'tunai' && ['Tautan hutang', a.hutang_id ? 'Tertaut' : pill('Menunggu tautan hutang')]]),
+      ['Cara perolehan', a.cara === 'saldo_awal' ? 'Saldo awal per ' + tgl(a.tgl_saldo_awal) + ' (tanpa uang keluar)'
+        : CARA_PEROLEHAN[a.cara] + (a.cara === 'tunai' ? ' dari ' + namaRekening(a.rekening_id) : ' · Hutang aset (2-8) ' + rp(totalBayar(a)))],
+      a.cara === 'saldo_awal' && ['Akumulasi sebelum saldo awal', rp(a.akumulasi_awal || 0) + ' · nilai buku ' + rp(a.nilai_perolehan - (a.akumulasi_awal || 0)) + ' ke 3-2-01 Ekuitas saldo awal'],
+      ['kredit', 'leasing'].includes(a.cara) && ['Tautan hutang', a.hutang_id ? 'Tertaut' : pill('Menunggu tautan hutang')]]),
     h('h3', null, istilah(a) + ' komersial'),
     kat?.disusutkan ? rincian([['Mulai digunakan', tgl(a.tgl_mulai)], ['Umur ekonomis', tahunTeks(a.umur_bulan)], ['Nilai residu', rp(a.residu)], ['Metode', 'Garis lurus, bulanan'],
       ['Akun', nmAkun(kat.akun_aset_id) + ' · akumulasi ' + nmAkun(kat.akun_akumulasi_id) + ' · beban ' + nmAkun(kat.akun_beban_id)]])
@@ -287,6 +289,7 @@ function tabLepas(a) {
   return rincian([['Status', pill(a.status)], ['Tanggal pelepasan', tgl(a.tgl_pelepasan)], ['Alasan', a.alasan_pelepasan],
     ['Nilai perolehan', rp(lp?.perolehan)], ['Akumulasi ' + istilah(a).toLowerCase(), rp(a.akumulasi_lepas)], ['Nilai buku saat dilepas', rp(a.nilai_buku_lepas)],
     ['Nilai jual', a.nilai_jual ? rp(a.nilai_jual) + ' ke ' + namaRekening(a.rekening_jual_id) : 'Rp 0'],
+    a.ppn_jual > 0 && ['PPN keluaran (2-5)', rp(a.ppn_jual) + ' · uang diterima ' + rp(a.nilai_jual + a.ppn_jual)],
     [a.laba_lepas >= 0 ? 'Laba pelepasan (4-4)' : 'Rugi pelepasan (7-2)', h('b', null, rp(Math.abs(a.laba_lepas || 0)))]]);
 }
 
@@ -343,7 +346,7 @@ function konfirmasiBatas(nilai, batas) {
 export function bukaFormAset(lama, {lepas = false} = {}) {
   const x = lama || {};
   const boleh = bisa();
-  const kunciBeli = !!lama && terkunci(K(), lama.tgl_perolehan);
+  const kunciBeli = !!lama && terkunci(K(), lama.tgl_saldo_awal || lama.tgl_perolehan);
   const sudahLepas = !!lama && lama.status !== 'Aktif';
   const galat = h('p', {class: 'form-galat', role: 'alert'});
   // 1. Identitas
@@ -372,6 +375,9 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
   const rek = pilihan('as-rek', [['', 'Pilih rekening…'], ...rekDaftar], x.rekening_id || (rekDaftar.length === 1 ? rekDaftar[0][0] : ''));
   const mRek = medan('Dibayar dari rekening', rek, {wajib: true});
   const caraInfo = h('p', {class: 'kecil redup medan-lebar'});
+  const tglSaldoBawaan = K().rekening.map((r) => r.tgl_saldo_awal).filter(Boolean).sort()[0] || hariIni();
+  const tglSaldo = tanggal('as-tglsaldo', x.tgl_saldo_awal || tglSaldoBawaan);
+  const mSaldo = medan('Tanggal saldo awal', tglSaldo, {wajib: true, bantuan: 'Tanggal aset mulai dicatat di aplikasi, biasanya sama dengan tanggal saldo awal rekening. Penyusutan sebelum bulan ini dianggap sudah terjadi.'});
   // 4. Penyusutan komersial
   const mulai = tanggal('as-mulai', x.tgl_mulai || '');
   let mulaiDiubah = !!x.tgl_mulai;
@@ -414,9 +420,13 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
   const rekJualDaftar = rekAktif(x.rekening_jual_id);
   const rekJual = pilihan('as-rekjual', [['', 'Pilih rekening…'], ...rekJualDaftar], x.rekening_jual_id || (rekJualDaftar.length === 1 ? rekJualDaftar[0][0] : ''));
   const alasan = teks('as-alasan', x.alasan_pelepasan, {placeholder: 'mis. Dijual karena diganti unit baru / rusak berat / hilang di lokasi proyek'});
-  const mJual = medan('Nilai jual', jual.el, {wajib: true, id: 'as-jual'}), mRekJual = medan('Diterima di rekening', rekJual, {wajib: true});
+  const ppnJual = uang('as-ppnjual', x.ppn_jual || '');
+  let ppnJualDiubah = !!x.ppn_jual;
+  ppnJual.inp.addEventListener('input', () => { ppnJualDiubah = true; });
+  const mJual = medan('Nilai jual (sebelum PPN)', jual.el, {wajib: true, id: 'as-jual'}), mRekJual = medan('Diterima di rekening', rekJual, {wajib: true});
+  const mPpnJual = medan('PPN keluaran', ppnJual.el, {id: 'as-ppnjual', bantuan: 'Perusahaan PKP: penjualan aset dikenai PPN. Bawaan tarif PPN × nilai jual; bisa diubah, isi 0 bila tidak dipungut.'});
   const lepasInfo = h('div', {class: 'kotak-info kecil medan-lebar'});
-  const bagLepas = h('div', {class: 'form-grid medan-lebar'}, medan('Tanggal pelepasan', tglLepas, {wajib: true}), mJual, mRekJual,
+  const bagLepas = h('div', {class: 'form-grid medan-lebar'}, medan('Tanggal pelepasan', tglLepas, {wajib: true}), mJual, mPpnJual, mRekJual,
     medan('Alasan', alasan, {wajib: true, lebar: true}), lepasInfo);
   const catatan = h('textarea', {id: 'as-catatan', rows: '2'}, x.catatan ?? '');
 
@@ -425,11 +435,13 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
   const baca = () => ({nama: nama.value.trim(), kategori_id: kat.value || null, no_seri: seri.value.trim() || null, supplier_id: supplier.querySelector('input[type=hidden]').value || null,
     tgl_perolehan: tglP.value || null, harga: harga.nilai(), ppn: ppn.nilai() || 0, ppn_kredit: kreditInp.checked && !kreditInp.disabled && (ppn.nilai() || 0) > 0,
     biaya_tambahan: bt.nilai() || 0, diskon: diskon.nilai() || 0, cara: cara.value, rekening_id: cara.value === 'tunai' ? rek.value || null : null,
+    tgl_saldo_awal: cara.value === 'saldo_awal' ? tglSaldo.value || null : null,
     tgl_mulai: katSek()?.disusutkan ? mulai.value || null : null, umur_bulan: katSek()?.disusutkan ? umurBulan() : null, residu: katSek()?.disusutkan ? residu.nilai() || 0 : 0,
     kelompok_id: katSek()?.disusutkan ? kel.value || null : null, bulan_fiskal: blnF.value ? blnF.value + '-01' : tglP.value || null,
     pemegang_id: pemId.value || null, lokasi_id: lok.value || null, tgl_mutasi: tglMut.value || null, catatan_mutasi: catMut.value.trim() || null,
     kondisi: kondisi.value, status: status.value, tgl_pelepasan: status.value !== 'Aktif' ? tglLepas.value || null : null,
-    nilai_jual: status.value === 'Dijual' ? jual.nilai() : 0, rekening_jual_id: status.value === 'Dijual' && (jual.nilai() || 0) > 0 ? rekJual.value || null : null,
+    nilai_jual: status.value === 'Dijual' ? jual.nilai() : 0, ppn_jual: !mPpnJual.hidden && status.value === 'Dijual' && (jual.nilai() || 0) > 0 ? ppnJual.nilai() || 0 : 0,
+    rekening_jual_id: status.value === 'Dijual' && (jual.nilai() || 0) > 0 ? rekJual.value || null : null,
     alasan_pelepasan: status.value !== 'Aktif' ? alasan.value.trim() || null : null, catatan: catatan.value.trim() || null});
 
   const segar = (dariKategori) => {
@@ -446,21 +458,30 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
     if (!mulaiDiubah) mulai.value = tglP.value;
     if (!blnFDiubah) blnF.value = (tglP.value || '').slice(0, 7);
     // PPN
-    const pkp = pkpPada(K().perusahaan?.data || {}, tglP.value);
+    const lamaAset = cara.value === 'saldo_awal';
+    const pkp = lamaAset || pkpPada(K().perusahaan?.data || {}, tglP.value);
     kreditInp.disabled = !boleh || kunciBeli || !pkp || !(d.ppn > 0);
     if (!pkp) kreditInp.checked = false;
-    else if (!kreditDiubah && !lama) kreditInp.checked = d.ppn > 0;
-    pkpInfo.textContent = pkp ? 'Perusahaan PKP pada tanggal ini: PPN masukan bisa dikreditkan (tidak masuk nilai aset).' : 'Perusahaan belum PKP pada tanggal ini: PPN ikut menjadi nilai perolehan.';
+    else if (!kreditDiubah && !lama && !lamaAset) kreditInp.checked = d.ppn > 0;
+    pkpInfo.textContent = lamaAset ? 'Aset lama: centang bila dulu PPN-nya dikreditkan (tidak masuk nilai aset).'
+      : pkp ? 'Perusahaan PKP pada tanggal ini: PPN masukan bisa dikreditkan (tidak masuk nilai aset).' : 'Perusahaan belum PKP pada tanggal ini: PPN ikut menjadi nilai perolehan.';
     const dd = baca(), nilai = nilaiPerolehan(dd);
     nilaiBox.replaceChildren(h('div', null, 'Nilai perolehan: ', h('b', null, rp(nilai))),
       h('div', {class: 'kecil redup'}, 'Harga ' + rp(dd.harga || 0) + (dd.biaya_tambahan ? ' + biaya tambahan ' + rp(dd.biaya_tambahan) : '') + (dd.diskon ? ' − diskon ' + rp(dd.diskon) : '')
-        + (dd.ppn ? (dd.ppn_kredit ? ' · PPN ' + rp(dd.ppn) + ' dikreditkan (masuk 1-4)' : ' + PPN ' + rp(dd.ppn)) : '') + ' · dibayar / dihutangkan ' + rp(totalBayar(dd))));
+        + (dd.ppn ? (dd.ppn_kredit ? ' · PPN ' + rp(dd.ppn) + (lamaAset ? ' dikreditkan' : ' dikreditkan (masuk 1-4)') : ' + PPN ' + rp(dd.ppn)) : '')
+        + (lamaAset ? '' : ' · dibayar / dihutangkan ' + rp(totalBayar(dd)))));
     const batas = batasKap();
     batasBox.hidden = !(nilai > 0 && nilai < batas);
     batasBox.textContent = 'Nilai perolehan di bawah batas kapitalisasi (' + rp(batas) + '). Sebaiknya dicatat sebagai biaya (OPEX) lewat Kas umum. Bila tetap disimpan, aplikasi meminta konfirmasi.';
     // cara
     mRek.hidden = cara.value !== 'tunai';
-    caraInfo.textContent = cara.value === 'tunai' ? 'Jurnal: D akun aset / K rekening pembayar.' : 'Jurnal: D akun aset / K 2-8 Hutang aset. Status hutang: menunggu tautan hutang (fitur Hutang Lain menyusul di Tahap 6).';
+    mSaldo.hidden = !lamaAset;
+    if (lamaAset) {
+      const akumAwal = k && dd.tgl_saldo_awal && nilai > 0 ? akumulasiSampai({...dd, nilai_perolehan: nilai, status: 'Aktif', tgl_pelepasan: null}, k, [], idxBulan(dd.tgl_saldo_awal) - 1) : 0;
+      caraInfo.textContent = 'Tidak ada uang keluar. Jurnal pada tanggal saldo awal: D akun aset ' + rp(nilai)
+        + (akumAwal ? ' / K akumulasi ' + rp(akumAwal) + ' (penyusutan sampai bulan sebelumnya)' : '') + ' / K 3-2-01 Ekuitas saldo awal ' + rp(nilai - akumAwal)
+        + ' (nilai buku). Pastikan aset ini belum dimasukkan lewat jurnal manual, agar tidak tercatat dua kali.';
+    } else caraInfo.textContent = cara.value === 'tunai' ? 'Jurnal: D akun aset / K rekening pembayar.' : 'Jurnal: D akun aset / K 2-8 Hutang aset. Status hutang: menunggu tautan hutang (fitur Hutang Lain menyusul di Tahap 6).';
     // penyusutan
     const susut = !!k?.disusutkan;
     judulSusut.textContent = '4. ' + (k?.jenis === 'tak_berwujud' ? 'Amortisasi' : 'Penyusutan') + ' komersial';
@@ -486,16 +507,22 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
     bagLepas.hidden = status.value === 'Aktif';
     mJual.hidden = mRekJual.hidden = status.value !== 'Dijual';
     if (status.value === 'Dijual') mRekJual.hidden = !((jual.nilai() || 0) > 0);
+    // PPN keluaran: hanya bila dijual dengan nilai > 0 dan perusahaan PKP pada tanggal penjualan.
+    const pkpJual = pkpPada(K().perusahaan?.data || {}, tglLepas.value);
+    mPpnJual.hidden = !(status.value === 'Dijual' && (jual.nilai() || 0) > 0 && (pkpJual || (x.ppn_jual || 0) > 0));
+    if (!mPpnJual.hidden && !ppnJualDiubah) ppnJual.inp.value = idn(pkpJual ? Math.round((jual.nilai() || 0) * (+K().akuntansi?.tarif_ppn_bp || 0) / 10000) : 0);
     if (status.value !== 'Aktif' && dd.tgl_pelepasan && nilai > 0) {
       const lp = hitungPelepasan({...contoh, status: status.value, tgl_pelepasan: dd.tgl_pelepasan, nilai_jual: dd.nilai_jual || 0}, k, servis);
-      lepasInfo.replaceChildren(h('div', null, 'Nilai buku saat dilepas ', h('b', null, rp(lp.buku)), ' (perolehan ' + rp(lp.perolehan) + ' − akumulasi ' + rp(lp.akumulasi) + ' sampai ' + namaBulan(bulanKe(idxBulan(dd.tgl_pelepasan) - 1)) + ').'),
+      const pj = baca().ppn_jual || 0;
+      lepasInfo.replaceChildren(pj > 0 && h('div', null, 'Uang diterima ', h('b', null, rp((dd.nilai_jual || 0) + pj)), ' (nilai jual ' + rp(dd.nilai_jual || 0) + ' + PPN ' + rp(pj) + ' → 2-5 PPN Keluaran; terbitkan faktur pajak keluaran).'),
+        h('div', null, 'Nilai buku saat dilepas ', h('b', null, rp(lp.buku)), ' (perolehan ' + rp(lp.perolehan) + ' − akumulasi ' + rp(lp.akumulasi) + ' sampai ' + namaBulan(bulanKe(idxBulan(dd.tgl_pelepasan) - 1)) + ').'),
         h('div', null, lp.laba >= 0 ? 'Laba pelepasan ' : 'Rugi pelepasan ', h('b', null, rp(Math.abs(lp.laba))), lp.laba >= 0 ? ' → 4-4 Laba Pelepasan Aset.' : ' → 7-2 Beban lain-lain.'),
         h('div', {class: 'redup'}, 'Bulan pelepasan tidak disusutkan. Aset keluar dari daftar aktif.'));
     } else lepasInfo.replaceChildren();
   };
   kat.addEventListener('change', () => segar(true));
-  [tglP, cara, kel, blnF, mulai, status, tglLepas, lok, rek].forEach((e) => e.addEventListener('change', () => segar()));
-  [harga.inp, ppn.inp, bt.inp, diskon.inp, residu.inp, jual.inp, umur].forEach((e) => e.addEventListener('input', () => segar()));
+  [tglP, cara, tglSaldo, kel, blnF, mulai, status, tglLepas, lok, rek].forEach((e) => e.addEventListener('change', () => segar()));
+  [harga.inp, ppn.inp, bt.inp, diskon.inp, residu.inp, jual.inp, ppnJual.inp, umur].forEach((e) => e.addEventListener('input', () => segar()));
   [kreditInp, pemId].forEach((e) => e.addEventListener('change', () => segar()));
   segar(!lama);
 
@@ -529,7 +556,7 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
   });
   const dlg = dialogLebar(lama ? 'Aset ' + lama.kode : 'Aset baru', h('div', {class: 'form'},
     h('p', {class: 'kecil redup'}, 'Isi bertahap dari atas. Kode aset dibuat otomatis dari prefix kategori. Nilai perolehan, penyusutan, dan jurnal dihitung otomatis. Dokumen dan servis ditambahkan dari halaman detail setelah aset tersimpan.'),
-    kunciBeli && h('div', {class: 'kotak-info'}, '🔒 Bulan perolehan ' + namaBulan(lama.tgl_perolehan) + ' sudah ditutup: nilai perolehan dan cara bayar tidak bisa diubah. Pemegang, lokasi, kondisi, dokumen, dan status masih bisa diubah.'),
+    kunciBeli && h('div', {class: 'kotak-info'}, '🔒 Bulan ' + (lama.tgl_saldo_awal ? 'saldo awal ' + namaBulan(lama.tgl_saldo_awal) : 'perolehan ' + namaBulan(lama.tgl_perolehan)) + ' sudah ditutup: nilai perolehan dan cara bayar tidak bisa diubah. Pemegang, lokasi, kondisi, dokumen, dan status masih bisa diubah.'),
     sudahLepas && h('div', {class: 'kotak-info'}, 'Aset ini sudah dilepas: nilai perolehan dan penyusutannya tidak bisa diubah. Ubah status ke Aktif dulu bila perlu koreksi.'),
     h('h3', null, '1. Identitas'),
     h('div', {class: 'form-grid'}, medan('Nama aset', nama, {wajib: true}), medan('Kategori', kat, {wajib: true}), medan('Kode aset', kodeEl, {bantuan: lama ? 'Kode tidak berubah.' : 'Otomatis, nomor pasti diberikan saat disimpan.'}),
@@ -539,7 +566,7 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
       h('div', {class: 'medan'}, kredit, pkpInfo), medan('Biaya tambahan', bt.el, {id: 'as-bt', bantuan: 'Ongkir, pemasangan, balik nama, dll.'}), medan('Diskon', diskon.el, {id: 'as-diskon'}),
       h('div', {class: 'medan medan-lebar'}, nilaiBox, batasBox)),
     h('h3', null, '3. Cara perolehan'),
-    h('div', {class: 'form-grid'}, medan('Cara', cara, {wajib: true}), mRek, caraInfo),
+    h('div', {class: 'form-grid'}, medan('Cara', cara, {wajib: true}), mRek, mSaldo, caraInfo),
     h('div', null, judulSusut, bagSusut, tanpaSusut),
     h('div', null, judulFis, bagFis),
     h('h3', null, '6. Penempatan'),
@@ -552,7 +579,7 @@ export function bukaFormAset(lama, {lepas = false} = {}) {
     galat,
     kaki(hapus, h('span', {class: 'pegas'}), h('button', {class: 'btn', type: 'button', onclick: () => dlg.close()}, boleh ? 'Batal' : 'Tutup'), boleh && simpan)));
   if (!boleh) dlg.querySelectorAll('input, select, textarea').forEach((e) => { e.disabled = true; });
-  if (boleh && (kunciBeli || sudahLepas)) [tglP, harga.inp, ppn.inp, kreditInp, bt.inp, diskon.inp, cara, rek, kat].forEach((e) => { e.disabled = true; });
+  if (boleh && (kunciBeli || sudahLepas)) [tglP, harga.inp, ppn.inp, kreditInp, bt.inp, diskon.inp, cara, rek, tglSaldo, kat].forEach((e) => { e.disabled = true; });
   if (boleh && sudahLepas) [mulai, umur, residu.inp].forEach((e) => { e.disabled = true; });
   if (lepas) status.focus();
 }
@@ -755,13 +782,14 @@ const KOLOM_IMPOR = [
   {k: 'nama', judul: 'Nama aset *', lebar: 30, ket: 'Wajib.'},
   {k: 'kategori', judul: 'Kategori *', lebar: 26, ket: 'Wajib. Nama kategori atau prefix persis seperti di Pengaturan → Aset (lihat sheet "Daftar kategori").'},
   {k: 'no_seri', judul: 'No. seri / plat / lisensi', lebar: 20, teks: true, ket: 'Opsional.'},
-  {k: 'tgl_perolehan', judul: 'Tanggal perolehan *', lebar: 16, ket: 'Wajib. YYYY-MM-DD atau DD/MM/YYYY. Tidak boleh di bulan yang sudah ditutup.'},
+  {k: 'tgl_perolehan', judul: 'Tanggal perolehan *', lebar: 16, ket: 'Wajib. YYYY-MM-DD atau DD/MM/YYYY. Tidak boleh di bulan yang sudah ditutup (kecuali cara Saldo awal).'},
   {k: 'harga', judul: 'Harga sebelum PPN *', lebar: 18, uang: true, ket: 'Wajib. Rupiah utuh.'},
   {k: 'ppn', judul: 'PPN', lebar: 14, uang: true, ket: 'Opsional, bawaan 0.'},
   {k: 'ppn_kredit', judul: 'PPN dikreditkan', lebar: 14, ket: 'Ya / Tidak (bawaan Tidak). Ya hanya bila perusahaan PKP pada tanggal perolehan.'},
   {k: 'biaya_tambahan', judul: 'Biaya tambahan', lebar: 14, uang: true, ket: 'Opsional.'},
   {k: 'diskon', judul: 'Diskon', lebar: 14, uang: true, ket: 'Opsional.'},
-  {k: 'cara', judul: 'Cara perolehan *', lebar: 16, ket: 'Wajib. Tunai / Kredit / Leasing.'},
+  {k: 'cara', judul: 'Cara perolehan *', lebar: 16, ket: 'Wajib. Tunai / Kredit / Leasing / Saldo awal (aset lama yang sudah dimiliki sebelum memakai aplikasi; tanpa uang keluar).'},
+  {k: 'tgl_saldo_awal', judul: 'Tanggal saldo awal', lebar: 16, ket: 'Wajib bila Saldo awal: tanggal aset mulai dicatat di aplikasi (biasanya tanggal saldo awal rekening). Tidak boleh di bulan yang sudah ditutup.'},
   {k: 'rekening', judul: 'Rekening pembayar', lebar: 24, ket: 'Wajib bila Tunai. Nama rekening persis seperti di Kas & Bank.'},
   {k: 'tgl_mulai', judul: 'Tanggal mulai digunakan', lebar: 18, ket: 'Opsional, bawaan tanggal perolehan.'},
   {k: 'umur_tahun', judul: 'Umur ekonomis (tahun)', lebar: 16, ket: 'Opsional, bawaan dari kategori. Boleh desimal, mis. 2,5.'},
@@ -794,6 +822,7 @@ async function unduhTemplateAset() {
   for (const c of KOLOM_IMPOR) p.addRow([c.judul, c.ket]);
   p.addRow([]);
   for (const t of ['Satu baris = satu aset. Kode aset dibuat otomatis dari prefix kategori.', 'Setiap aset dijurnal otomatis: D akun aset / K rekening (Tunai) atau K 2-8 Hutang aset (Kredit / Leasing).',
+    'Saldo awal (aset lama): D akun aset / K akumulasi penyusutan sampai bulan sebelum tanggal saldo awal / K 3-2-01 Ekuitas saldo awal (nilai buku). Tidak ada uang keluar.',
     'Aplikasi menampilkan pratinjau lebih dulu; tidak ada yang tersimpan sebelum Anda menekan Simpan.', 'Pemegang, dokumen, dan servis diisi lewat aplikasi setelah impor.']) p.addRow([t]);
   const d = wb.addWorksheet('Daftar kategori');
   d.columns = [{header: 'Kategori', width: 34}, {header: 'Prefix', width: 10}, {header: 'Disusutkan', width: 12}, {header: 'Umur default (tahun)', width: 18}, {header: 'Kelompok default', width: 20}];
@@ -830,11 +859,17 @@ function evaluasiAset(no, v) {
   if (!kat) g('Kategori', v.kategori ? '"' + tx(v.kategori) + '" tidak ada.' : 'wajib diisi.');
   const tp = v.tgl_perolehan === undefined ? null : bacaTanggal(v.tgl_perolehan);
   if (!tp) g('Tanggal perolehan', v.tgl_perolehan === undefined ? 'wajib diisi.' : 'bukan tanggal yang benar.');
-  else if (terkunci(K(), tp)) g('Tanggal perolehan', 'bulan ' + namaBulan(tp) + ' sudah ditutup.');
+  const caraT = tx(v.cara).toLowerCase(), cara = caraT.startsWith('tunai') || caraT.startsWith('transfer') ? 'tunai' : caraT.startsWith('kredit') || caraT.startsWith('cicil') ? 'kredit'
+    : caraT.startsWith('leas') ? 'leasing' : caraT.startsWith('saldo') ? 'saldo_awal' : null;
+  if (!cara) g('Cara perolehan', 'isi Tunai, Kredit, Leasing, atau Saldo awal.');
+  const ts = cara === 'saldo_awal' ? (v.tgl_saldo_awal === undefined ? null : bacaTanggal(v.tgl_saldo_awal)) : null;
+  if (cara === 'saldo_awal') {
+    if (!ts) g('Tanggal saldo awal', v.tgl_saldo_awal === undefined ? 'wajib untuk cara Saldo awal.' : 'bukan tanggal yang benar.');
+    else if (terkunci(K(), ts)) g('Tanggal saldo awal', 'bulan ' + namaBulan(ts) + ' sudah ditutup.');
+    else if (tp && ts < tp) g('Tanggal saldo awal', 'tidak boleh sebelum tanggal perolehan.');
+  } else if (tp && terkunci(K(), tp)) g('Tanggal perolehan', 'bulan ' + namaBulan(tp) + ' sudah ditutup.');
   const uangK = (k, label, wajib) => { if (v[k] === undefined) { if (wajib) g(label, 'wajib diisi.'); return 0; } const x = bacaRupiah(v[k]); if (!Number.isInteger(x) || x < 0) { g(label, 'bukan rupiah utuh.'); return 0; } return x; };
   const harga = uangK('harga', 'Harga', true), ppn = uangK('ppn', 'PPN'), btam = uangK('biaya_tambahan', 'Biaya tambahan'), dis = uangK('diskon', 'Diskon'), res = uangK('residu', 'Residu');
-  const caraT = tx(v.cara).toLowerCase(), cara = caraT.startsWith('tunai') || caraT.startsWith('transfer') ? 'tunai' : caraT.startsWith('kredit') || caraT.startsWith('cicil') ? 'kredit' : caraT.startsWith('leas') ? 'leasing' : null;
-  if (!cara) g('Cara perolehan', 'isi Tunai, Kredit, atau Leasing.');
   const rek = cara === 'tunai' ? K().rekening.find((r) => r.aktif && r.nama.trim().toLowerCase() === tx(v.rekening).toLowerCase()) : null;
   if (cara === 'tunai' && !rek) g('Rekening pembayar', v.rekening ? '"' + tx(v.rekening) + '" tidak ada / nonaktif.' : 'wajib untuk Tunai.');
   const mulai = v.tgl_mulai === undefined ? tp : bacaTanggal(v.tgl_mulai);
@@ -849,9 +884,9 @@ function evaluasiAset(no, v) {
   const kondisi = v.kondisi === undefined ? 'Baik' : KONDISI_ASET.find((k) => k.toLowerCase() === tx(v.kondisi).toLowerCase());
   if (!kondisi) g('Kondisi', 'isi Baik, Perlu servis, atau Rusak.');
   const kredit = ya(v.ppn_kredit) && ppn > 0;
-  if (kredit && tp && !pkpPada(K().perusahaan?.data || {}, tp)) g('PPN dikreditkan', 'perusahaan belum PKP pada tanggal perolehan.');
+  if (kredit && tp && cara !== 'saldo_awal' && !pkpPada(K().perusahaan?.data || {}, tp)) g('PPN dikreditkan', 'perusahaan belum PKP pada tanggal perolehan.');
   const data = {nama, kategori_id: kat?.id, no_seri: tx(v.no_seri) || null, supplier_id: null, faktur: [], foto: [], tgl_perolehan: tp, harga, ppn, ppn_kredit: kredit, biaya_tambahan: btam, diskon: dis,
-    cara, rekening_id: rek?.id || null, tgl_mulai: kat?.disusutkan ? mulai : null, umur_bulan: kat?.disusutkan ? umurB : null, residu: kat?.disusutkan ? res : 0, kelompok_id: kat?.disusutkan ? kel?.id || null : null,
+    cara, rekening_id: rek?.id || null, tgl_saldo_awal: ts, tgl_mulai: kat?.disusutkan ? mulai : null, umur_bulan: kat?.disusutkan ? umurB : null, residu: kat?.disusutkan ? res : 0, kelompok_id: kat?.disusutkan ? kel?.id || null : null,
     bulan_fiskal: tp, pemegang_id: null, lokasi_id: lok?.id || null, kondisi: kondisi || 'Baik', status: 'Aktif', catatan: tx(v.catatan) || null, tetap_aset: ya(v.tetap_aset)};
   const nilai = nilaiPerolehan(data);
   if (!galat.length && nilai < batasKap() && !data.tetap_aset) g('Nilai perolehan', rp(nilai) + ' di bawah batas kapitalisasi ' + rp(batasKap()) + '. Isi "Tetap aset bila di bawah batas" = Ya, atau catat sebagai biaya.');

@@ -6,7 +6,7 @@ import {bagi} from './kontrak-util.js';
 
 export const KONDISI_ASET = ['Baik', 'Perlu servis', 'Rusak'];
 export const STATUS_ASET = ['Aktif', 'Dijual', 'Dihapuskan', 'Hilang'];
-export const CARA_PEROLEHAN = {tunai: 'Tunai / transfer', kredit: 'Kredit / cicilan', leasing: 'Leasing'};
+export const CARA_PEROLEHAN = {tunai: 'Tunai / transfer', kredit: 'Kredit / cicilan', leasing: 'Leasing', saldo_awal: 'Saldo awal (aset lama)'};
 export const JENIS_DOKUMEN_ASET = ['Pajak tahunan', 'STNK 5 tahunan', 'Lisensi', 'Garansi', 'Asuransi', 'Lainnya'];
 export const METODE_FISKAL = {garis_lurus: 'Garis lurus', saldo_menurun: 'Saldo menurun'};
 export const JENIS_KATEGORI = {berwujud: 'Berwujud', tak_berwujud: 'Tak berwujud'};
